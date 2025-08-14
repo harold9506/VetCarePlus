@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Historial de Monitoreo - VetCare Plus</title>
+    <link rel="icon" type="image/png" href="/img/vetcare-logo.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="min-h-screen flex flex-col justify-between bg-gray-50">
+
+    <!-- Navbar -->
+    <nav class="bg-teal-600 text-white px-6 py-3 flex justify-between items-center shadow-lg">
+        <div class="flex items-center space-x-4">
+            <img src="/img/vetcare-logo1.png" alt="VetCare Plus Logo" class="h-10 w-10">
+            <span class="text-xl font-semibold">VetCare Plus</span>
+        </div>
+        <div class="flex items-center space-x-2">
+            <h2 class="text-lg font-semibold">Historial de Monitoreo</h2>
+        </div>
+        <a href="/principal" class="bg-gray-300 px-4 py-2 rounded-lg text-sm font-semibold text-gray-800 hover:bg-gray-400 transition">
+            Volver al Inicio
+        </a>
+    </nav>
+
+    <!-- Título -->
+    <div class="text-center mb-8 mt-6">
+        <h1 class="text-2xl font-semibold text-gray-800" id="tituloMascota">
+            <span class="text-lg">📋 Historial de</span> 
+            <span id="nombreMascota" class="text-2xl font-bold"></span>
+        </h1>
+    </div>
+
+    <!-- Tabla -->
+    <div class="flex-1 overflow-x-auto px-4">
+        <table class="w-full table-auto border-collapse text-center">
+            <thead>
+                <tr class="bg-teal-100">
+                    <th class="py-3 px-4 border-b-2 border-teal-300 text-gray-700">Fecha</th>
+                    <th class="py-3 px-4 border-b-2 border-teal-300 text-gray-700">Ritmo Cardíaco (BPM)</th>
+                    <th class="py-3 px-4 border-b-2 border-teal-300 text-gray-700">Nivel de Oxígeno (%)</th>
+                </tr>
+            </thead>
+            <tbody id="tablaBody" class="text-gray-600"></tbody>
+        </table>
+    </div>
+
+    <!-- Firebase Scripts v8 -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCsweRiyLmBWfVnBg135gY5fMNH00j9Pys",
+            authDomain: "pawmonitor-10eba.firebaseapp.com",
+            projectId: "pawmonitor-10eba",
+            storageBucket: "pawmonitor-10eba.appspot.com",
+            messagingSenderId: "1033444392498",
+            appId: "1:1033444392498:web:12f2fcda392a316abfc62b"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        const nombreMascota = document.getElementById('nombreMascota');
+        const tablaBody = document.getElementById('tablaBody');
+
+        // 1. CORRECCIÓN EN EL auth.onAuthStateChanged
+auth.onAuthStateChanged(async (user) => {
+    if (!user) {
+        alert("Debes iniciar sesión");
+        return;
+    }
+
+    const uid = user.uid;
+
+    try {
+        const usersRef = db.collection("usuarios");
+        const querySnapshot = await usersRef.where("uid", "==", uid).get();
+
+        if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            const userData = userDoc.data();
+            const mascota = userData.mascota;
+
+            if (mascota && mascota.nombreMascota && mascota.id) {
+                nombreMascota.innerText = mascota.nombreMascota;
+                // 👇 AQUÍ ESTÁ LA CORRECCIÓN: pasar también mascota.id
+                await cargarHistorial(userDoc.id, mascota.id);
+            } else {
+                alert("No se encontró información completa de la mascota.");
+            }
+        } else {
+            alert("No se encontró el documento del usuario.");
+        }
+
+    } catch (error) {
+        console.error("Error al obtener datos del usuario:", error);
+        alert("Error al cargar los datos.");
+    }
+});
+
+// 2. CORRECCIÓN EN LA FUNCIÓN cargarHistorial
+async function cargarHistorial(usuarioDocId, mascotaId) {
+    try {
+        // 👇 RUTA DIRECTA A LOS REGISTROS DE LA MASCOTA ESPECÍFICA
+        const registrosRef = db.collection(`usuarios/${usuarioDocId}/historial/${mascotaId}/registros`);
+        const registrosSnap = await registrosRef.orderBy("timestamp", "desc").get();
+
+        tablaBody.innerHTML = "";
+
+        if (registrosSnap.empty) {
+            tablaBody.innerHTML = `
+                <tr>
+                    <td colspan="3" class="py-8 px-4 text-gray-500 text-center">
+                        No hay registros disponibles para esta mascota
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        registrosSnap.forEach((doc) => {
+            const data = doc.data();
+            const fecha = data.timestamp?.toDate().toLocaleString() || "Sin fecha";
+            const row = `
+                <tr class="hover:bg-teal-50">
+                    <td class="py-3 px-4 border-b">${fecha}</td>
+                    <td class="py-3 px-4 border-b">${data.ritmo ?? '-'}</td>
+                    <td class="py-3 px-4 border-b">${data.oxigeno ?? '-'}</td>
+                </tr>
+            `;
+            tablaBody.innerHTML += row;
+        });
+
+    } catch (error) {
+        console.error("Error al cargar el historial:", error);
+        tablaBody.innerHTML = `
+            <tr>
+                <td colspan="3" class="py-8 px-4 text-red-500 text-center">
+                    Error al cargar los datos del historial
+                </td>
+            </tr>
+        `;
+    }
+}
+    </script>
+
+    <!-- Footer -->
+    <footer class="bg-white text-center py-4 text-gray-600 text-sm shadow-md">
+        &copy; 2025 VetCare Plus. Todos los derechos reservados.
+    </footer>
+</body>
+</html>

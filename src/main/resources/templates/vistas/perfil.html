@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Perfil - VetCare Plus</title>
+    <link rel="icon" type="image/png" href="/img/vetcare-logo.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Cambiamos las importaciones de Firebase a la versión 8 (CDN) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+    <style>
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #e2e8f0;
+            border-top: 5px solid #0d9488;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .alert {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+            display: none;
+        }
+        .alert-success {
+            background-color: #def7ec;
+            border-left: 4px solid #0d9488;
+            color: #03543f;
+        }
+        .alert-error {
+            background-color: #fde8e8;
+            border-left: 4px solid #f98080;
+            color: #9b1c1c;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-gray-50">
+    <!-- Loader -->
+    <div id="loader" class="loading">
+        <div class="text-center">
+            <div class="spinner"></div>
+            <p class="mt-3 text-teal-600 font-semibold">Cargando...</p>
+        </div>
+    </div>
+
+    <!-- Navbar -->
+    <nav class="bg-teal-600 text-white px-6 py-3 flex justify-between items-center shadow-lg">
+        <div class="flex items-center space-x-4">
+            <img src="/img/vetcare-logo1.png" alt="VetCare Plus Logo" class="h-10 w-10">
+            <span class="text-xl font-semibold">VetCare Plus</span>
+        </div>
+        <div class="flex items-center space-x-2">
+            <h2 class="text-lg font-semibold">Editar Perfil</h2>
+        </div>
+        <a href="/principal" class="bg-gray-300 px-4 py-2 rounded-lg text-sm font-semibold text-gray-800 hover:bg-gray-400 transition">
+            Volver al Inicio
+        </a>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container mx-auto px-4 py-8">
+
+        <!-- Profile Form -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h1 class="text-3xl font-bold text-teal-600 mb-6">Perfil de Usuario y Mascota</h1>
+
+            <form id="profileForm" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Owner Information -->
+                <div class="col-span-2">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">Información del Dueño</h2>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="nombre" class="block text-sm font-medium text-gray-700">Nombre</label>
+                    <input type="text" id="nombre" name="nombre" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="apellido" class="block text-sm font-medium text-gray-700">Apellido</label>
+                    <input type="text" id="apellido" name="apellido" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                </div>
+
+                <div class="col-span-2">
+                    <label for="identificacion" class="block text-sm font-medium text-gray-700">Identificación</label>
+                    <input type="text" id="identificacion" name="identificacion" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="telefono" class="block text-sm font-medium text-gray-700">Teléfono</label>
+                    <input type="tel" id="telefono" name="telefono" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="direccion" class="block text-sm font-medium text-gray-700">Dirección</label>
+                    <input type="text" id="direccion" name="direccion" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="ciudad" class="block text-sm font-medium text-gray-700">Ciudad</label>
+                    <input type="text" id="ciudad" name="ciudad" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" id="email" name="email" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50 bg-gray-50" readonly>
+                </div>
+
+                <div class="col-span-2">
+                    <label class="block text-sm font-medium text-gray-700">Foto de perfil</label>
+                    <div class="mt-2 flex items-center space-x-4">
+                        <div class="relative">
+                            <img id="profilePreview" src="" alt="Foto de perfil" class="h-20 w-20 rounded-full object-cover bg-gray-100">
+                            <div id="uploadSpinner" class="absolute inset-0 bg-white bg-opacity-80 flex items-center justify-center rounded-full hidden">
+                                <div class="spinner w-8 h-8"></div>
+                            </div>
+                        </div>
+                        <label class="cursor-pointer bg-gray-200 px-4 py-2 rounded-md hover:bg-gray-300 transition-colors">
+                            <span class="text-sm font-medium text-gray-700">Cambiar foto</span>
+                            <input type="file" id="profileImage" class="hidden" accept="image/*">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Pet Information -->
+                <div class="col-span-2 mt-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">Información de la Mascota</h2>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="nombreMascota" class="block text-sm font-medium text-gray-700">Nombre de la mascota</label>
+                    <input type="text" id="nombreMascota" name="nombreMascota" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="fechaNacimiento" class="block text-sm font-medium text-gray-700">Fecha de nacimiento</label>
+                    <input type="date" id="fechaNacimiento" name="fechaNacimiento" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="tipoMascota" class="block text-sm font-medium text-gray-700">Tipo de mascota</label>
+                    <select id="tipoMascota" name="tipoMascota" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                        <option value="">Seleccionar</option>
+                        <option value="Perro">Perro</option>
+                        <option value="Gato">Gato</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="raza" class="block text-sm font-medium text-gray-700">Raza</label>
+                    <input type="text" id="raza" name="raza" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="sexoMascota" class="block text-sm font-medium text-gray-700">Sexo</label>
+                    <select id="sexoMascota" name="sexoMascota" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                        <option value="">Seleccionar</option>
+                        <option value="Macho">Macho</option>
+                        <option value="Hembra">Hembra</option>
+                    </select>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="peso" class="block text-sm font-medium text-gray-700">Peso (kg)</label>
+                    <input type="number" step="0.1" id="peso" name="peso" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                </div>
+
+                <div class="col-span-2">
+                    <label for="enfermedades" class="block text-sm font-medium text-gray-700">Enfermedades</label>
+                    <textarea id="enfermedades" name="enfermedades" rows="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50"></textarea>
+                </div>
+
+                <div class="col-span-2">
+                    <label for="medicamentos" class="block text-sm font-medium text-gray-700">Medicamentos</label>
+                    <textarea id="medicamentos" name="medicamentos" rows="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50"></textarea>
+                </div>
+
+                <div class="col-span-2">
+                    <label for="alimento" class="block text-sm font-medium text-gray-700">Alimentación</label>
+                    <textarea id="alimento" name="alimento" rows="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50"></textarea>
+                </div>
+
+                <div class="col-span-2 md:col-span-1">
+                    <label for="esterilizado" class="block text-sm font-medium text-gray-700">¿Está esterilizada?</label>
+                    <select id="esterilizado" name="esterilizado" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring focus:ring-teal-200 focus:ring-opacity-50" required>
+                        <option value="">Seleccionar</option>
+                        <option value="Si">Si</option>
+                        <option value="No">No</option>
+                    </select>
+                </div>
+
+                <div id="alertSuccess" class="alert alert-success" role="alert" style="display: none;">
+                    Perfil actualizado exitosamente.
+                </div>
+                <div id="alertError" class="alert alert-error" role="alert" style="display: none;">
+                    Error al actualizar el perfil.
+                </div>
+
+                <div class="col-span-2 mt-6">
+                    <button type="submit" class="w-full bg-teal-600 text-white py-2 px-4 rounded-md hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-colors duration-200">
+                        Guardar cambios
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="w-full text-center mt-auto py-4 bg-gray-100">
+        <p class="text-sm text-gray-600">&copy; 2025 VetCare Plus. Todos los derechos reservados.</p>
+    </footer>
+
+    <script>
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCsweRiyLmBWfVnBg135gY5fMNH00j9Pys",
+            authDomain: "pawmonitor-10eba.firebaseapp.com",
+            projectId: "pawmonitor-10eba",
+            storageBucket: "pawmonitor-10eba.appspot.com",
+            messagingSenderId: "1234567890",
+            appId: "1:1234567890:web:abcdef123456"
+        };
+
+        // Inicializar Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const storage = firebase.storage();
+
+        const profileForm = document.getElementById('profileForm');
+        const profileImageInput = document.getElementById('profileImage');
+        const profilePreview = document.getElementById('profilePreview');
+        const uploadSpinner = document.getElementById('uploadSpinner');
+        const alertSuccess = document.getElementById('alertSuccess');
+        const alertError = document.getElementById('alertError');
+
+        let userData = null;
+        let userDocRef = null;
+        let mascotaId = null;
+        let currentUser = null;
+
+        // Función para mostrar el loader
+        function showLoader() {
+            document.getElementById('loader').style.display = 'flex';
+        }
+
+        // Función para ocultar el loader
+        function hideLoader() {
+            document.getElementById('loader').style.display = 'none';
+        }
+
+        // Función para mostrar alertas
+        function showAlert(message, type = 'success') {
+            const alertElement = type === 'success' ? alertSuccess : alertError;
+            alertElement.textContent = message;
+            alertElement.style.display = 'block';
+            setTimeout(() => {
+                alertElement.style.display = 'none';
+            }, 3000);
+        }
+
+        // Función para previsualizar la imagen de perfil
+        profileImageInput.addEventListener('change', function (event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    profilePreview.src = e.target.result;
+                    profilePreview.classList.remove('hidden');
+                    uploadSpinner.classList.add('hidden');
+                };
+                reader.readAsDataURL(file);
+                uploadSpinner.classList.remove('hidden');
+            }
+        });
+
+        // Verificar si el usuario está autenticado
+        auth.onAuthStateChanged(function(user) {
+            if (user) {
+                currentUser = user;
+                loadProfile();
+            } else {
+                console.log("Usuario no autenticado");
+                window.location.href = "/inicio";
+            }
+        });
+
+        // Función para cargar el perfil del usuario
+        async function loadProfile() {
+            showLoader();
+            try {
+                if (currentUser) {
+                    const usersRef = db.collection("usuarios");
+                    const q = usersRef.where("uid", "==", currentUser.uid);
+                    const querySnapshot = await q.get();
+
+                    if (!querySnapshot.empty) {
+                        const userDoc = querySnapshot.docs[0];
+                        userData = userDoc.data();
+                        userDocRef = db.collection("usuarios").doc(userDoc.id);
+
+                        // Cargar información del dueño
+                        if (userData.dueño) {
+                            document.getElementById('nombre').value = userData.dueño.nombre || '';
+                            document.getElementById('apellido').value = userData.dueño.apellido || '';
+                            document.getElementById('identificacion').value = userData.dueño.identificacion || '';
+                            document.getElementById('telefono').value = userData.dueño.telefono || '';
+                            document.getElementById('direccion').value = userData.dueño.direccion || '';
+                            document.getElementById('ciudad').value = userData.dueño.ciudad || '';
+                            document.getElementById('email').value = currentUser.email || '';
+
+                            // Cargar foto de perfil si existe
+                            if (userData.dueño.fotoUrl) {
+                                profilePreview.src = userData.dueño.fotoUrl;
+                            }
+                        }
+
+                        // Cargar información de la mascota
+                        if (userData.mascota) {
+                            mascotaId = userData.mascota.id;
+                            const mascotaData = userData.mascota;
+                            document.getElementById('nombreMascota').value = mascotaData.nombreMascota || '';
+                            document.getElementById('fechaNacimiento').value = mascotaData.fechaNacimiento || '';
+                            document.getElementById('tipoMascota').value = mascotaData.tipoMascota || '';
+                            document.getElementById('raza').value = mascotaData.raza || '';
+                            document.getElementById('sexoMascota').value = mascotaData.sexoMascota || '';
+                            document.getElementById('peso').value = mascotaData.peso || '';
+                            document.getElementById('enfermedades').value = mascotaData.enfermedades || '';
+                            document.getElementById('medicamentos').value = mascotaData.medicamentos || '';
+                            document.getElementById('alimento').value = mascotaData.alimentacion || '';
+                            document.getElementById('esterilizado').value = mascotaData.esterilizado || '';
+                        }
+                    } else {
+                        showAlert('No se encontró el documento del usuario.', 'error');
+                    }
+                } else {
+                    showAlert('Usuario no autenticado.', 'error');
+                    window.location.href = "/inicio";
+                }
+            } catch (error) {
+                console.error("Error al cargar los datos del usuario:", error);
+                showAlert('Error al cargar los datos del usuario.', 'error');
+            } finally {
+                hideLoader();
+            }
+        }
+
+        // Función para actualizar el perfil del usuario
+        async function updateProfile(event) {
+            event.preventDefault();
+            showLoader();
+            
+            try {
+                // IMPORTANTE: Mantener los campos esenciales para el historial
+                const dueñoData = {
+                    nombre: document.getElementById('nombre').value,
+                    apellido: document.getElementById('apellido').value,
+                    identificacion: document.getElementById('identificacion').value,
+                    telefono: document.getElementById('telefono').value,
+                    direccion: document.getElementById('direccion').value,
+                    ciudad: document.getElementById('ciudad').value,
+                };
+
+                // CRUCIAL: Preservar el ID de la mascota y todos los campos necesarios
+                const mascotaData = {
+                    id: mascotaId || (userData && userData.mascota && userData.mascota.id) || generateMascotaId(), // Preservar o generar ID
+                    nombreMascota: document.getElementById('nombreMascota').value,
+                    fechaNacimiento: document.getElementById('fechaNacimiento').value,
+                    tipoMascota: document.getElementById('tipoMascota').value,
+                    raza: document.getElementById('raza').value,
+                    sexoMascota: document.getElementById('sexoMascota').value,
+                    peso: document.getElementById('peso').value,
+                    enfermedades: document.getElementById('enfermedades').value,
+                    medicamentos: document.getElementById('medicamentos').value,
+                    alimentacion: document.getElementById('alimento').value,
+                    esterilizado: document.getElementById('esterilizado').value,
+                };
+
+                // Si había una foto previa, la mantenemos
+                if (userData && userData.dueño && userData.dueño.fotoUrl) {
+                    dueñoData.fotoUrl = userData.dueño.fotoUrl;
+                }
+
+                // Procesar la nueva imagen si se ha seleccionado
+                const file = profileImageInput.files[0];
+                if (file) {
+                    uploadSpinner.classList.remove('hidden');
+                    
+                    // Convertir la imagen a base64
+                    const base64Image = await optimizeImage(file, 500); // 500KB máximo
+                    
+                    // Verificar el tamaño (base64 es ~33% más grande que el archivo original)
+                    const sizeInKB = Math.round((base64Image.length * 3/4) / 1024);
+                    
+                    // Firestore tiene un límite de 1MB por documento
+                    if (sizeInKB > 900) {  // Dejamos un margen de seguridad
+                        throw new Error("La imagen es demasiado grande (máximo ~900KB)");
+                    }
+                    
+                    // Guardar la imagen en base64 en lugar de usar Firebase Storage
+                    dueñoData.fotoUrl = base64Image;
+                    profilePreview.src = base64Image;
+                    
+                    uploadSpinner.classList.add('hidden');
+                }
+
+                // CRÍTICO: Usar merge para no sobrescribir campos existentes
+                await userDocRef.update({
+                    dueño: dueñoData,
+                    mascota: mascotaData,
+                });
+
+                // Actualizar la variable local para mantener coherencia
+                userData.dueño = dueñoData;
+                userData.mascota = mascotaData;
+                mascotaId = mascotaData.id;
+
+                showAlert('Perfil actualizado exitosamente.');
+                
+            } catch (error) {
+                console.error("Error al actualizar el perfil:", error);
+                showAlert(`Error al actualizar el perfil: ${error.message}`, 'error');
+            } finally {
+                hideLoader();
+            }
+        }
+
+        // Función para generar un ID único para la mascota si no existe
+        function generateMascotaId() {
+            return 'mascota_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Función para convertir un archivo a base64
+        function convertToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // Función para optimizar/comprimir la imagen antes de subirla
+        function optimizeImage(file, maxSizeKB = 500) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+                        
+                        // Si la imagen es muy grande, reducir su tamaño
+                        const MAX_WIDTH = 800;
+                        const MAX_HEIGHT = 800;
+                        
+                        if (width > MAX_WIDTH) {
+                            height = Math.round(height * (MAX_WIDTH / width));
+                            width = MAX_WIDTH;
+                        }
+                        
+                        if (height > MAX_HEIGHT) {
+                            width = Math.round(width * (MAX_HEIGHT / height));
+                            height = MAX_HEIGHT;
+                        }
+                        
+                        canvas.width = width;
+                        canvas.height = height;
+                        
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        // Calidad inicial de la compresión
+                        let quality = 0.8;
+                        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+                        
+                        // Reducir calidad hasta que el tamaño sea aceptable
+                        while (dataUrl.length * 3/4 > maxSizeKB * 1024 && quality > 0.1) {
+                            quality -= 0.1;
+                            dataUrl = canvas.toDataURL('image/jpeg', quality);
+                        }
+                        
+                        resolve(dataUrl);
+                    };
+                    img.onerror = reject;
+                    img.src = event.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // Manejar el envío del formulario de edición de perfil
+        profileForm.addEventListener('submit', updateProfile);
+    </script>
+</body>
+</html>

@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro - VetCare Plus</title>
+    <link rel="icon" type="image/png" href="/img/vetcare-logo.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Importar Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getAuth, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCsweRiyLmBWfVnBg135gY5fMNH00j9Pys",
+            authDomain: "pawmonitor-10eba.firebaseapp.com",
+            databaseURL: "https://pawmonitor-10eba-default-rtdb.firebaseio.com",
+            projectId: "pawmonitor-10eba",
+            storageBucket: "pawmonitor-10eba.appspot.com",
+            messagingSenderId: "1033444392498",
+            appId: "1:1033444392498:web:12f2fcda392a316abfc62b",
+            measurementId: "G-X7LGHC933K"
+        };
+    
+        // Inicializar Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        
+        // Función para agregar una vacuna visualmente
+        function agregarVacuna() {
+        const vacunasList = document.getElementById('vacunasList');
+        if (!vacunasList) return;
+
+        const vacunaNum = vacunasList.children.length + 1;
+        
+        const nuevaVacuna = document.createElement('div');
+        nuevaVacuna.className = "p-4 bg-white rounded-lg shadow-md transition-all duration-300 hover:shadow-lg";
+
+        nuevaVacuna.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="nombreVacuna${vacunaNum}" class="block text-sm font-medium text-gray-700">Nombre de Vacuna</label>
+                    <input type="text" id="nombreVacuna${vacunaNum}" placeholder="Ej: Rabia, Moquillo..." class="border p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-300">
+                </div>
+                <div>
+                    <label for="fechaAplicacion${vacunaNum}" class="block text-sm font-medium text-gray-700">Fecha de Aplicación</label>
+                    <input type="date" id="fechaAplicacion${vacunaNum}" class="border p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-300">
+                </div>
+                <div>
+                    <label for="fechaProxima${vacunaNum}" class="block text-sm font-medium text-gray-700">Fecha Próxima Dosis</label>
+                    <input type="date" id="fechaProxima${vacunaNum}" class="border p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-300">
+                </div>
+                <div>
+                    <label for="veterinario${vacunaNum}" class="block text-sm font-medium text-gray-700">Veterinario</label>
+                    <input type="text" id="veterinario${vacunaNum}" placeholder="Nombre del veterinario" class="border p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-300">
+                </div>
+            </div>
+            <button type="button" class="mt-3 text-red-500 hover:text-red-700 text-sm flex items-center" onclick="this.parentElement.remove()">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                </svg>
+                Eliminar Vacuna
+            </button>
+        `;
+
+        vacunasList.appendChild(nuevaVacuna);
+    }
+
+    // Asignar evento al botón de agregar vacuna
+    if (btnAgregarVacuna) {
+        btnAgregarVacuna.addEventListener('click', agregarVacuna);
+    }
+
+        // Asignamos el evento correctamente
+        document.getElementById('btnAgregarVacuna').addEventListener('click', agregarVacuna);
+    
+        // Hacer accesibles las variables en la ventana global (para debug)
+        window.auth = auth;
+        window.db = db;
+
+        // Función para generar contraseña segura
+        function generarContraseñaSegura() {
+            const mayusculas = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            const minusculas = 'abcdefghijklmnopqrstuvwxyz';
+            const numeros = '0123456789';
+            const caracteres = '!@#$%^&*()_+-=[]{}|;:,.<>?';
+            
+            let contraseña = '';
+            
+            // Asegurar al menos uno de cada tipo
+            contraseña += mayusculas[Math.floor(Math.random() * mayusculas.length)];
+            contraseña += minusculas[Math.floor(Math.random() * minusculas.length)];
+            contraseña += numeros[Math.floor(Math.random() * numeros.length)];
+            contraseña += caracteres[Math.floor(Math.random() * caracteres.length)];
+            
+            // Completar hasta 12 caracteres
+            const todosCaracteres = mayusculas + minusculas + numeros + caracteres;
+            while (contraseña.length < 12) {
+                contraseña += todosCaracteres[Math.floor(Math.random() * todosCaracteres.length)];
+            }
+            
+            // Mezclar la contraseña
+            return contraseña.split('').sort(() => Math.random() - 0.5).join('');
+        }
+        
+        // Función para generar ID único para mascota
+        function generarIdMascota() {
+            const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let id = 'PET-';
+            
+            // Generar 8 caracteres aleatorios
+            for (let i = 0; i < 8; i++) {
+                id += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
+            }
+            
+            // Añadir timestamp para garantizar unicidad
+            id += '-' + Date.now().toString().substr(-6);
+            
+            return id;
+        }
+
+    
+        document.addEventListener("DOMContentLoaded", function () {
+            const form = document.querySelector("form");
+            const btnGenerarContraseña = document.getElementById('generar-contraseña');
+            const btnMostrarContraseña = document.getElementById('mostrar-contraseña');
+            const btnMostrarConfirmarContraseña = document.getElementById('mostrar-confirmar-contraseña');
+            const email = document.getElementById("email");
+            const confirmarEmail = document.getElementById("confirmar_email");
+            const password = document.getElementById("password");
+            const confirmarPassword = document.getElementById("confirm_password");
+            
+            // Evento para validar que el correo de confirmación coincida
+            confirmarEmail.addEventListener('blur', function() {
+                if (email.value !== confirmarEmail.value) {
+                    confirmarEmail.setCustomValidity("Los correos electrónicos no coinciden");
+                    mostrarError('confirmar_email', 'Los correos electrónicos no coinciden');
+                } else {
+                    confirmarEmail.setCustomValidity("");
+                    ocultarError('confirmar_email');
+                }
+            });
+            
+            // Evento para validar que la contraseña de confirmación coincida
+            confirmarPassword.addEventListener('blur', function() {
+                if (password.value !== confirmarPassword.value) {
+                    confirmarPassword.setCustomValidity("Las contraseñas no coinciden");
+                    mostrarError('confirm_password', 'Las contraseñas no coinciden');
+                } else {
+                    confirmarPassword.setCustomValidity("");
+                    ocultarError('confirm_password');
+                }
+            });
+            
+            // Función para mostrar mensaje de error
+            function mostrarError(idCampo, mensaje) {
+                // Verificar si ya existe un mensaje de error
+                let errorExistente = document.getElementById(`error-${idCampo}`);
+                
+                if (!errorExistente) {
+                    const campo = document.getElementById(idCampo);
+                    const mensajeError = document.createElement('p');
+                    mensajeError.id = `error-${idCampo}`;
+                    mensajeError.className = 'text-red-500 text-xs mt-1';
+                    mensajeError.innerText = mensaje;
+                    campo.parentNode.appendChild(mensajeError);
+                    campo.classList.add('border-red-500');
+                }
+            }
+            
+            // Función para ocultar mensaje de error
+            function ocultarError(idCampo) {
+                const mensajeError = document.getElementById(`error-${idCampo}`);
+                if (mensajeError) {
+                    mensajeError.remove();
+                }
+                document.getElementById(idCampo).classList.remove('border-red-500');
+            }
+
+            // Evento para generar contraseña
+            if (btnGenerarContraseña) {
+                btnGenerarContraseña.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const contraseñaGenerada = generarContraseñaSegura();
+                    password.value = contraseñaGenerada;
+                    confirmarPassword.value = contraseñaGenerada;
+                    // Asegurarse de eliminar cualquier error de validación
+                    ocultarError('confirm_password');
+                    confirmarPassword.setCustomValidity("");
+                });
+            }
+
+            // Eventos para mostrar/ocultar contraseñas
+            if (btnMostrarContraseña) {
+                btnMostrarContraseña.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const passwordInput = document.getElementById('password');
+                    const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                    passwordInput.setAttribute('type', type);
+                    this.innerHTML = type === 'password' ? 
+                        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>' :
+                        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>';
+                });
+            }
+
+            if (btnMostrarConfirmarContraseña) {
+                btnMostrarConfirmarContraseña.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const confirmPasswordInput = document.getElementById('confirm_password');
+                    const type = confirmPasswordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                    confirmPasswordInput.setAttribute('type', type);
+                    this.innerHTML = type === 'password' ? 
+                        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>' :
+                        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>';
+                });
+            }
+
+            form.addEventListener("submit", async function (event) {
+                event.preventDefault(); // Evitar recargar la página
+                
+                // Validar que los correos y contraseñas coincidan antes de enviar
+                if (email.value !== confirmarEmail.value) {
+                    mostrarError('confirmar_email', 'Los correos electrónicos no coinciden');
+                    return;
+                }
+                
+                if (password.value !== confirmarPassword.value) {
+                    mostrarError('confirm_password', 'Las contraseñas no coinciden');
+                    return;
+                }
+
+                // Obtener valores del formulario
+                const emailValue = email.value;
+                const passwordValue = password.value;
+                
+                // Referencia al botón
+                const submitButton = document.querySelector('button[type="submit"]');
+                
+                // Cambiar el estado del botón a "cargando"
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Procesando...';
+                
+                        // Generar ID único para la mascota
+                    const mascotaId = generarIdMascota();
+                        
+                    const carnetVacunas = [];
+                    
+                    const vacunasElements = document.querySelectorAll("#vacunasList > div");
+                    vacunasElements.forEach((vacunaDiv, idx) => {
+                        const num = idx + 1;
+                        const nombreVacuna = document.getElementById(`nombreVacuna${num}`)?.value;
+                        const fechaAplicacion = document.getElementById(`fechaAplicacion${num}`)?.value;
+                        const fechaProxima = document.getElementById(`fechaProxima${num}`)?.value;
+                        const veterinario = document.getElementById(`veterinario${num}`)?.value;
+
+                        if (nombreVacuna && fechaAplicacion) {
+                            carnetVacunas.push({
+                                nombreVacuna,
+                                fechaAplicacion,
+                                fechaProxima,
+                                veterinario
+                            });
+                        }
+                    });
+
+                // Datos del dueño y la mascota
+                const usuarioData = {
+                    dueño: {
+                        nombre: document.getElementById("nombre").value,
+                        apellido: document.getElementById("apellido").value,
+                        identificacion: document.getElementById("identificacion").value,
+                        telefono: document.getElementById("telefono").value,
+                        direccion: document.getElementById("direccion").value,
+                        ciudad: document.getElementById("ciudad").value,
+                        email: emailValue,
+                        fotoPerfil: "https://cdn-icons-png.flaticon.com/512/847/847969.png"
+                    },
+                    mascota: {
+                        id: mascotaId, // ID único para la mascota
+                        nombreMascota: document.getElementById("nombre_mascota").value,
+                        fechaNacimiento: document.getElementById("fecha_nacimiento").value,
+                        tipoMascota: document.getElementById("tipo").value,
+                        raza: document.getElementById("raza").value,
+                        peso: document.getElementById("peso").value,
+                        enfermedades: document.getElementById("enfermedades").value,
+                        medicamentos: document.getElementById("medicamentos").value,
+                        alimentacion: document.getElementById("alimento").value,
+                        sexoMascota: document.getElementById("sexomascota").value,
+                        esterilizado: document.getElementById("esterilizado").value,
+                        carnetVacunas: carnetVacunas
+                    },
+                    timestamp: new Date()
+                };
+
+                try {
+                    // Registrar usuario en Firebase Authentication
+                    const userCredential = await createUserWithEmailAndPassword(auth, emailValue, passwordValue);
+                    const user = userCredential.user;
+
+                    // Guardar en Firestore con el UID del usuario
+                    await addDoc(collection(db, "usuarios"), {
+                        uid: user.uid, 
+                        ...usuarioData
+                    });
+                    
+                    // También podemos crear una colección separada para mascotas
+                    // para facilitar búsquedas y consultas específicas de mascotas
+                    await addDoc(collection(db, "mascotas"), {
+                        id: mascotaId,
+                        uidDueño: user.uid,
+                        nombreMascota: document.getElementById("nombre_mascota").value,
+                        fechaNacimiento: document.getElementById("fecha_nacimiento").value,
+                        tipoMascota: document.getElementById("tipo").value,
+                        raza: document.getElementById("raza").value,
+                        peso: document.getElementById("peso").value,
+                        enfermedades: document.getElementById("enfermedades").value,
+                        medicamentos: document.getElementById("medicamentos").value,
+                        alimentacion: document.getElementById("alimento").value,
+                        sexoMascota: document.getElementById("sexomascota").value,
+                        esterilizado: document.getElementById("esterilizado").value,
+                        historiaClinica: [], // Array vacío para futuros registros médicos
+                        createdAt: new Date()
+                    });
+
+                    // Redirigir al inicio
+                    window.location.replace(window.location.origin + "/inicio");
+
+                } catch (error) {
+                    // Restaurar el botón en caso de error
+                    submitButton.disabled = false;
+                    submitButton.textContent = "Registrarse";
+                    
+                    if (error.code === "auth/email-already-in-use") {
+                        alert("El correo ya está registrado. Intenta con otro.");
+                    } else {
+                        console.error("Error en el registro:", error);
+                        alert("Error al registrar: " + error.message);
+                    }
+                }
+            });
+        });
+        window.registrarMascota = async function() {
+        const nombreMascota = document.getElementById('nombreMascota').value.trim();
+        const tipoMascota = document.getElementById('tipoMascota').value.trim();
+
+        const vacunasElements = document.querySelectorAll("#vacunasList div");
+        const vacunas = [];
+
+        vacunasElements.forEach(vacunaDiv => {
+            const nombre = vacunaDiv.querySelector(".nombre-vacuna").value.trim();
+            const fecha = vacunaDiv.querySelector(".fecha-vacuna").value;
+            if (nombre && fecha) {
+            vacunas.push({ nombre, fecha });
+            }
+        });
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+            const uid = user.uid;
+            const mascotaData = {
+                nombreMascota,
+                tipoMascota,
+                vacunas,
+                fechaRegistro: new Date()
+            };
+
+            try {
+                await addDoc(collection(db, `usuarios/${uid}/mascotas`), mascotaData);
+                alert("🐾 Mascota registrada correctamente!");
+                window.location.reload();
+            } catch (error) {
+                console.error("Error al registrar la mascota:", error);
+                alert("Error al registrar la mascota");
+            }
+            } else {
+            window.location.replace("/inicio");
+            }
+        });
+        }
+    </script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-blue-100 via-teal-50 to-white flex flex-col justify-center items-center p-4">
+    <div class="w-full max-w-4xl bg-white p-8 rounded-2xl shadow-xl">
+        <!-- Logo -->
+        <div class="text-center mb-6">
+            <img src="/img/vetcare-logo.png" alt="VetCare Plus" class="mx-auto w-16 h-16">
+            <h1 class="text-2xl font-bold text-gray-800 mt-2">Registro</h1>
+            <p class="text-gray-500">Completa los siguientes datos</p>
+        </div>
+
+        <!-- Formulario en dos columnas -->
+        <form method="post" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <!-- Datos del Dueño -->
+            <div>
+                <h2 class="text-lg font-semibold text-gray-700 text-center mb-4">Datos del Dueño</h2>
+
+                <div>
+                    <label for="nombre" class="block text-sm font-medium text-gray-700">Nombres</label>
+                    <input id="nombre" name="nombre" type="text" required placeholder="Isabel Natalia" 
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="apellido" class="block text-sm font-medium text-gray-700">Apellidos</label>
+                    <input id="apellido" name="apellido" type="text" required placeholder="Saldarriaga Durango"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="identificacion" class="block text-sm font-medium text-gray-700">Identificación</label>
+                    <input id="identificacion" name="identificacion" type="text" required placeholder="12345678"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="telefono" class="block text-sm font-medium text-gray-700">Teléfono</label>
+                    <input id="telefono" name="telefono" type="text" required placeholder="311 123 0709"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="direccion" class="block text-sm font-medium text-gray-700">Dirección</label>
+                    <input id="direccion" name="direccion" type="text" required placeholder="Calle 123 # 07 - 09"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="ciudad" class="block text-sm font-medium text-gray-700">Ciudad</label>
+                    <input id="ciudad" name="ciudad" type="text" required placeholder="Bogotá, Medellín, Cali..."
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="email" class="block text-sm font-medium text-gray-700">Correo Electrónico</label>
+                    <input id="email" name="email" type="email" required placeholder="ejemplo@email.com"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="confirmar_email" class="block text-sm font-medium text-gray-700">Confirmar Correo</label>
+                    <input id="confirmar_email" name="confirmar_email" type="email" required placeholder="ejemplo@email.com"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div class="relative">
+                    <label for="password" class="block text-sm font-medium text-gray-700">Contraseña</label>
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <input id="password" name="password" type="password" required placeholder="••••••••"
+                                class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2 pr-10" />
+                            <button id="mostrar-contraseña" type="button"
+                                class="absolute inset-y-0 right-2 flex items-center text-gray-500 hover:text-gray-700">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                </svg>
+                            </button>
+                        </div>
+                        <button id="generar-contraseña" type="button"
+                            class="px-2 py-1 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-all duration-300 text-sm whitespace-nowrap">
+                            Generar
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">La contraseña debe contener mayúsculas, minúsculas, números y caracteres especiales</p>
+                </div>
+
+                <div class="relative">
+                    <label for="confirm_password" class="block text-sm font-medium text-gray-700">Confirmar Contraseña</label>
+                    <div class="relative">
+                        <input id="confirm_password" name="confirm_password" type="password" required placeholder="••••••••"
+                            class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2 pr-10" />
+                        <button id="mostrar-confirmar-contraseña" type="button"
+                            class="absolute inset-y-0 right-2 flex items-center text-gray-500 hover:text-gray-700">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Datos de la Mascota -->
+            <div>
+                <h2 class="text-lg font-semibold text-gray-700 text-center mb-4">Datos de la Mascota</h2>
+
+                <div>
+                    <label for="nombre_mascota" class="block text-sm font-medium text-gray-700">Nombre</label>
+                    <input id="nombre_mascota" name="nombre_mascota" type="text" required placeholder="Firulais"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="fecha_nacimiento" class="block text-sm font-medium text-gray-700">Fecha de Nacimiento</label>
+                    <input id="fecha_nacimiento" name="fecha_nacimiento" type="text" required 
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2 text-gray-400"
+                        value="dd/mm/aaaa"
+                        onfocus="if(this.value=='dd/mm/aaaa') { this.value=''; this.classList.remove('text-gray-400'); this.type='date'; }"
+                        onblur="if(this.value=='') { this.type='text'; this.value='dd/mm/aaaa'; this.classList.add('text-gray-400'); }" />
+                </div>
+
+                <div>
+                    <label for="tipo" class="block text-sm font-medium text-gray-700">Tipo</label>
+                    <select id="tipo" name="tipo" required 
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2 text-gray-400"
+                        onchange="this.classList.remove('text-gray-400')">
+                        <option value="" disabled selected>Seleccione</option>
+                        <option value="Perro">Perro</option>
+                        <option value="Gato">Gato</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="raza" class="block text-sm font-medium text-gray-700">Raza</label>
+                    <input id="raza" name="raza" type="text" required placeholder="Labrador, Persa, etc."
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="peso" class="block text-sm font-medium text-gray-700">Peso (kg)</label>
+                    <input id="peso" name="peso" type="number" required placeholder="5.5"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="enfermedades" class="block text-sm font-medium text-gray-700">Enfermedades</label>
+                    <input id="enfermedades" name="enfermedades" type="text" required placeholder="(Si aplica)"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="medicamentos" class="block text-sm font-medium text-gray-700">Medicamentos que Consume</label>
+                    <input id="medicamentos" name="medicamentos" type="text" required placeholder="(Si aplica)"
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2" />
+                </div>
+
+                <div>
+                    <label for="alimento" class="block text-sm font-medium text-gray-700">Tipo Alimentación</label>
+                    <select id="alimento" name="alimento" required 
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2 text-gray-400"
+                        onchange="this.classList.remove('text-gray-400')">
+                        <option value="" disabled selected>Seleccione</option>
+                        <option value="Balanceado">Balanceado</option>
+                        <option value="Casero">Casero</option>
+                        <option value="Mixto">Mixto</option>
+                        <option value="Otro">Otro</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label for="sexomascota" class="block text-sm font-medium text-gray-700">Sexo de la Mascota</label>
+                    <select id="sexomascota" name="sexomascota" required 
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2 text-gray-400"
+                        onchange="this.classList.remove('text-gray-400')">
+                        <option value="" disabled selected>Seleccione</option>
+                        <option value="Hembra">Hembra</option>
+                        <option value="Macho">Macho</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label for="esterilizado" class="block text-sm font-medium text-gray-700">¿Esterilizado?</label>
+                    <select id="esterilizado" name="esterilizado" required 
+                        class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2 text-gray-400"
+                        onchange="this.classList.remove('text-gray-400')">
+                        <option value="" disabled selected>Seleccione</option>
+                        <option value="Si">Sí</option>
+                        <option value="No">No</option>
+                    </select>
+                </div>
+
+
+            </div>
+
+          <!-- Sección de Vacunas -->
+            <div class="col-span-1 md:col-span-2 mt-6 bg-gray-100 p-6 rounded-lg">
+                <div id="carnetVacunas" class="space-y-6">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-6">Carnet de Vacunas 🩺</h2>
+                                            
+                    <div id="vacunasList" class="space-y-6">
+                    <!-- Vacuna inicial -->
+                    <div class="p-4 bg-white rounded-lg shadow-md transition-all duration-300 hover:shadow-lg">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="nombreVacuna1" class="block text-sm font-medium text-gray-700">Nombre de Vacuna</label>
+                                <input type="text" id="nombreVacuna1" placeholder="Ej: Rabia, Moquillo..." class="border p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-300">
+                             </div>
+                            <div>
+                                <label for="fechaAplicacion1" class="block text-sm font-medium text-gray-700">Fecha de Aplicación</label>
+                                <input type="date" id="fechaAplicacion1" class="border p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-300">
+                            </div>
+                            <div>
+                                <label for="fechaProxima1" class="block text-sm font-medium text-gray-700">Fecha Próxima Dosis</label>
+                                <input type="date" id="fechaProxima1" class="border p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-300">
+                            </div>
+                            <div>
+                                <label for="veterinario1" class="block text-sm font-medium text-gray-700">Veterinario</label>
+                                <input type="text" id="veterinario1" placeholder="Nombre del veterinario" class="border p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-300">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                                            
+                    <button id="btnAgregarVacuna" type="button" class="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg shadow-md transition transform hover:scale-105 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+                            </svg>
+                                Agregar Vacuna
+                    </button>
+                </div>
+            </div>
+
+            <!-- Botón de registro -->
+            <div class="col-span-2">
+                <button type="submit" class="w-full py-3 rounded-lg text-white bg-teal-600 hover:bg-teal-700 transition-all duration-300 shadow-md text-lg font-semibold">
+                    Registrarse
+                </button>
+            </div>
+        </form>
+
+        <!-- ¿Ya tienes cuenta? -->
+        <div class="mt-6 text-center text-sm">
+            <span class="text-gray-600">¿Ya tienes cuenta?</span>
+            <a href="/inicio" class="font-medium text-teal-600 hover:text-teal-500">Inicia sesión aquí</a>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="w-full text-center mt-8">
+        <p class="text-sm text-gray-600">&copy; 2025 VetCare Plus. Todos los derechos reservados.</p>
+    </div>
+</body>
+</html>

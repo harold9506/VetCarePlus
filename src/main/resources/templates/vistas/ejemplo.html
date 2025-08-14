@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - VetCare Plus</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getFirestore, collection, getDocs, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+    import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCsweRiyLmBWfVnBg135gY5fMNH00j9Pys",
+      authDomain: "pawmonitor-10eba.firebaseapp.com",
+      projectId: "pawmonitor-10eba",
+      storageBucket: "pawmonitor-10eba.appspot.com",
+      messagingSenderId: "1033444392498",
+      appId: "1:1033444392498:web:12f2fcda392a316abfc62b",
+      measurementId: "G-X7LGHC933K"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    // Variables globales
+    let todasLasMascotas = [];
+    const adminEmail = "admin@admin.com";
+
+    // Función para calcular la edad de una mascota en meses o años
+    function calcularEdadMascota(fechaNacimiento) {
+      if (!fechaNacimiento) return "Edad desconocida";
+      
+      try {
+        const fechaNac = new Date(fechaNacimiento);
+        const hoy = new Date();
+        
+        // Verificar si la fecha es válida
+        if (isNaN(fechaNac.getTime())) return "Fecha inválida";
+        
+        // Calcular meses y años
+        let meses = (hoy.getFullYear() - fechaNac.getFullYear()) * 12;
+        meses += hoy.getMonth() - fechaNac.getMonth();
+        
+        // Ajustar si el día actual es menor al día de nacimiento
+        if (hoy.getDate() < fechaNac.getDate()) {
+          meses--;
+        }
+        
+        // Formatear el resultado
+        if (meses < 12) {
+          return meses === 1 ? "1 mes" : `${meses} meses`;
+        } else {
+          const años = Math.floor(meses / 12);
+          const mesesRestantes = meses % 12;
+          
+          if (mesesRestantes === 0) {
+            return años === 1 ? "1 año" : `${años} años`;
+          } else {
+            return años === 1 
+              ? `1 año y ${mesesRestantes} ${mesesRestantes === 1 ? 'mes' : 'meses'}`
+              : `${años} años y ${mesesRestantes} ${mesesRestantes === 1 ? 'mes' : 'meses'}`;
+          }
+        }
+      } catch (error) {
+        console.error("Error al calcular edad:", error);
+        return "Error de cálculo";
+      }
+    }
+
+    async function cargarDashboard() {
+      try {
+        mostrarCargando(true);
+        const errorContainer = document.getElementById("errorContainer");
+        errorContainer.classList.add("hidden");
+        
+        const usuariosRef = collection(db, "usuarios");
+        const usuariosSnapshot = await getDocs(usuariosRef);
+
+        // Inicializamos contadores
+        let totalUsuarios = 0;
+        let totalMascotas = 0;
+        let perros = 0;
+        let gatos = 0;
+        let otros = 0;
+        todasLasMascotas = [];
+
+        usuariosSnapshot.forEach(doc => {
+          const data = doc.data();
+          // Verificamos el email del usuario directamente o en la propiedad del dueño
+          const email = data.email || data.dueño?.email || "";
+          const uid = data.uid || "";
+          
+          // Excluimos explícitamente al admin de las estadísticas
+          if (email !== adminEmail && doc.id !== "admin" && !email.includes("admin") && uid !== "jPeis5gAKmbQIFU0K09tO0f27KU2") {
+            totalUsuarios++;
+            
+            if (data.mascota) {
+              totalMascotas += 1;
+              const tipo = data.mascota.tipoMascota?.toLowerCase() || "";
+
+              if (tipo.includes("perro")) perros++;
+              else if (tipo.includes("gato")) gatos++;
+              else otros++;
+
+              // Calcular la edad basada en fechaNacimiento
+              const fechaNacimiento = data.mascota.fechaNacimiento || "";
+              const edadMascota = calcularEdadMascota(fechaNacimiento);
+
+              todasLasMascotas.push({
+                id: doc.id,
+                nombreDueño: data.dueño?.nombre || "Dueño desconocido",
+                emailDueño: email,
+                nombreMascota: data.mascota?.nombreMascota || "Mascota sin nombre",
+                tipoMascota: data.mascota?.tipoMascota || "Tipo desconocido",
+                edadMascota: edadMascota,
+                raza: data.mascota?.raza || "Raza desconocida",
+                sexo: data.mascota?.sexoMascota || "Sexo desconocido",
+                peso: data.mascota?.peso || "Peso desconocido"
+              });
+            }
+          }
+        });
+
+        // Actualizamos la interfaz con los datos
+        document.getElementById("totalUsuarios").textContent = totalUsuarios;
+        document.getElementById("totalMascotas").textContent = totalMascotas;
+        document.getElementById("totalPerros").textContent = perros;
+        document.getElementById("totalGatos").textContent = gatos;
+        document.getElementById("totalOtros").textContent = otros;
+
+        
+        // Mostramos la lista de mascotas
+        mostrarListaMascotas(todasLasMascotas);
+        
+        // Si no hay mascotas, mostramos un mensaje
+        const sinDatosMsg = document.getElementById("sinDatos");
+        if (totalMascotas === 0) {
+          sinDatosMsg.classList.remove("hidden");
+        } else {
+          sinDatosMsg.classList.add("hidden");
+        }
+        
+        mostrarCargando(false);
+      } catch (error) {
+        console.error("Error al cargar dashboard:", error);
+        mostrarError("Error al cargar los datos. Por favor, intenta nuevamente.");
+        mostrarCargando(false);
+      }
+      // Llamamos a obtenerVacunasProximas después de cargar el dashboard
+      obtenerVacunasProximas();
+    }
+
+    function mostrarCargando(mostrar) {
+      const loading = document.getElementById("loading");
+      const contenido = document.getElementById("contenidoDashboard");
+      
+      if (mostrar) {
+        loading.classList.remove("hidden");
+        contenido.classList.add("opacity-50");
+      } else {
+        loading.classList.add("hidden");
+        contenido.classList.remove("opacity-50");
+      }
+    }
+
+    function mostrarError(mensaje) {
+      const errorContainer = document.getElementById("errorContainer");
+      const errorMensaje = document.getElementById("errorMensaje");
+      
+      errorMensaje.textContent = mensaje;
+      errorContainer.classList.remove("hidden");
+      
+      // Auto ocultar después de 5 segundos
+      setTimeout(() => {
+        errorContainer.classList.add("hidden");
+      }, 5000);
+    }
+
+    function getTipoMascotaColor(tipo) {
+      tipo = tipo.toLowerCase();
+      if (tipo.includes("perro")) return "bg-green-100 border-green-400";
+      if (tipo.includes("gato")) return "bg-yellow-100 border-yellow-400";
+      return "bg-blue-100 border-blue-400";
+    }
+
+    function getTipoMascotaIcono(tipo) {
+      tipo = tipo.toLowerCase();
+      if (tipo.includes("perro")) return "🐕";
+      if (tipo.includes("gato")) return "🐈";
+      return "🐾";
+    }
+
+    function mostrarListaMascotas(mascotas) {
+      const listaContainer = document.getElementById("listaMascotas");
+      listaContainer.innerHTML = '';
+      
+      mascotas.forEach(item => {
+        // Verificación adicional para evitar mostrar mascotas del admin
+        if (item.emailDueño !== adminEmail && !item.emailDueño.includes("admin")) {
+          const colorClase = getTipoMascotaColor(item.tipoMascota);
+          const icono = getTipoMascotaIcono(item.tipoMascota);
+          
+          const div = document.createElement("div");
+          div.className = `p-4 rounded-lg shadow-md hover:shadow-lg transition border-l-4 ${colorClase}`;
+          div.innerHTML = `
+            <div class="flex justify-between items-start mb-2">
+              <h4 class="font-bold text-lg flex items-center">
+                ${icono} ${item.nombreMascota}
+              </h4>
+              <span class="px-2 py-1 rounded text-xs font-semibold bg-gray-200">${item.tipoMascota}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mt-3">
+              <p class="text-gray-700"><strong>Dueño:</strong> ${item.nombreDueño}</p>
+              <p class="text-gray-700"><strong>Edad:</strong> ${item.edadMascota}</p>
+              <p class="text-gray-700"><strong>Raza:</strong> ${item.raza}</p>
+              <p class="text-gray-700"><strong>Sexo:</strong> ${item.sexo}</p>
+              <p class="text-gray-700"><strong>Peso:</strong> ${item.peso} kg</p>
+              <p class="text-gray-700"><strong>Email:</strong> ${item.emailDueño}</p>
+            </div>
+          `;
+          listaContainer.appendChild(div);
+        }
+      });
+    }
+
+    function filtrarMascotas() {
+      const filtro = document.getElementById("buscadorMascotas").value.toLowerCase();
+      
+      if (!filtro) {
+        mostrarListaMascotas(todasLasMascotas);
+        return;
+      }
+      
+      const mascotasFiltradas = todasLasMascotas.filter(mascota => {
+        // Filtrar por campos y también asegurarse de que no sea del admin
+        return mascota.emailDueño !== adminEmail && 
+              !mascota.emailDueño.includes("admin") &&
+              (mascota.nombreMascota.toLowerCase().includes(filtro) ||
+               mascota.nombreDueño.toLowerCase().includes(filtro) ||
+               mascota.tipoMascota.toLowerCase().includes(filtro) ||
+               mascota.raza.toLowerCase().includes(filtro) ||
+               mascota.emailDueño.toLowerCase().includes(filtro));
+      });
+      
+      mostrarListaMascotas(mascotasFiltradas);
+      
+      // Actualizar contador de resultados
+      document.getElementById("resultadosFiltro").textContent = `Mostrando ${mascotasFiltradas.length} de ${todasLasMascotas.length} mascotas`;
+    }
+
+    // Registrar los event listeners
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById("refreshButton").addEventListener("click", cargarDashboard);
+      document.getElementById("buscadorMascotas").addEventListener("input", filtrarMascotas);
+      document.getElementById("filtrarBtn").addEventListener("click", filtrarMascotas);
+    });
+
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const nombreSpan = document.getElementById("nombre");
+        nombreSpan.textContent = user.email === adminEmail ? "Admin" : (user.email || "Usuario");
+        cargarDashboard();
+      } else {
+        window.location.replace("/inicio");
+      }
+    });
+
+    window.cerrarSesion = async function () {
+      try {
+        mostrarCargando(true);
+        await signOut(auth);
+        window.location.replace("/inicio");
+      } catch (error) {
+        mostrarError("Error al cerrar sesión");
+        mostrarCargando(false);
+      }
+    };
+
+    async function obtenerVacunasProximas() {
+      try {
+        console.log("Iniciando obtención de vacunas próximas...");
+        const vacunasProximas = [];
+        
+        // Obtener todos los documentos de usuarios
+        const usuariosRef = collection(db, 'usuarios');
+        const usuariosSnapshot = await getDocs(usuariosRef);
+        
+        console.log(`Total de documentos de usuarios encontrados: ${usuariosSnapshot.size}`);
+        
+        // Para cada usuario
+        usuariosSnapshot.forEach(doc => {
+          const userData = doc.data();
+          const userId = doc.id;
+          
+          // IMPORTANTE: No filtramos al administrador aquí para poder ver todas las vacunas
+          // Imprimir información para depuración
+          console.log(`Procesando usuario: ${userId}, email: ${userData.email || userData.dueño?.email || 'Sin email'}`);
+          
+          // Primero verificamos si hay una mascota individual
+          if (userData.mascota) {
+            console.log(`Usuario ${userId} tiene una mascota individual`);
+            procesarMascota(userData.mascota, userData, userId, vacunasProximas);
+          }
+          
+          // También verificamos si hay un array de mascotas
+          if (userData.mascotas && Array.isArray(userData.mascotas)) {
+            console.log(`Usuario ${userId} tiene ${userData.mascotas.length} mascotas en array`);
+            userData.mascotas.forEach((mascota, idx) => {
+              console.log(`Procesando mascota ${idx + 1} de ${userData.mascotas.length}`);
+              procesarMascota(mascota, userData, userId, vacunasProximas);
+            });
+          }
+        });
+
+        // Ordenar por fecha más próxima
+        vacunasProximas.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
+        console.log('Vacunas próximas encontradas:', vacunasProximas.length);
+        console.log('Datos de vacunas:', vacunasProximas);
+        
+        // Mostrar las vacunas próximas en el HTML
+        mostrarVacunasProximas(vacunasProximas);
+      } catch (error) {
+        console.error("Error al obtener las vacunas próximas: ", error);
+        const vacunasListContainer = document.getElementById("vacunasProximasList");
+        vacunasListContainer.innerHTML = '<p class="text-red-500">Error al cargar las vacunas próximas. Consulta la consola para más detalles.</p>';
+      }
+    }
+
+    // Función auxiliar para procesar una mascota y extraer sus vacunas
+    function procesarMascota(mascota, userData, userId, vacunasProximas) {
+      // Obtener el nombre de la mascota
+      const nombreMascota = mascota.nombreMascota || 'Sin nombre';
+      
+      // Verificar si hay un carnet de vacunas
+      if (mascota.carnetVacunas && Array.isArray(mascota.carnetVacunas)) {
+        console.log(`Mascota ${nombreMascota} tiene ${mascota.carnetVacunas.length} vacunas en su carnet`);
+        
+        mascota.carnetVacunas.forEach(vacuna => {
+          // Verificar si hay una fecha próxima
+          if (vacuna.fechaProxima) {
+            const fechaVacuna = new Date(vacuna.fechaProxima);
+            const fechaActual = new Date();
+            
+            // Solo incluir vacunas futuras
+            if (fechaVacuna > fechaActual) {
+              console.log(`Añadiendo vacuna: ${vacuna.nombreVacuna} para ${nombreMascota}, fecha: ${vacuna.fechaProxima}`);
+              
+              vacunasProximas.push({
+                nombreMascota: nombreMascota,
+                tipoMascota: mascota.tipoMascota || 'No especificado',
+                vacuna: vacuna.nombreVacuna || 'Sin especificar',
+                fecha: vacuna.fechaProxima,
+                fechaAplicacion: vacuna.fechaAplicacion || 'No especificada',
+                veterinario: vacuna.veterinario || 'No especificado',
+                usuario: userData.dueño?.nombre || userData.nombre || 'Usuario sin nombre',
+                email: userData.dueño?.email || userData.email || 'Sin email',
+                userId: userId
+              });
+            } else {
+              console.log(`Vacuna ${vacuna.nombreVacuna} descartada por fecha pasada: ${vacuna.fechaProxima}`);
+            }
+          } else {
+            console.log(`Vacuna sin fecha próxima descartada`);
+          }
+        });
+      } else {
+        console.log(`Mascota ${nombreMascota} no tiene carnet de vacunas o no es un array`);
+      }
+    }
+
+    // Función para mostrar las vacunas en la interfaz con más detalles y filtrado
+    function mostrarVacunasProximas(vacunas) {
+      const vacunasListContainer = document.getElementById("vacunasProximasList");
+
+      // Limpiar cualquier contenido previo
+      vacunasListContainer.innerHTML = '';
+
+      if (vacunas.length === 0) {
+        vacunasListContainer.innerHTML = `
+          <div class="text-center py-8">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h4 class="mt-4 text-xl font-semibold text-gray-600">No hay vacunas próximas programadas</h4>
+            <p class="text-gray-500">Ninguna mascota tiene vacunas programadas para fechas futuras</p>
+          </div>
+        `;
+        return;
+      }
+
+      // Añadir un contador y filtros
+      const headerSection = document.createElement('div');
+      headerSection.classList.add('mb-6', 'flex', 'justify-between', 'items-center', 'flex-wrap', 'gap-4');
+      headerSection.innerHTML = `
+        <div>
+          <p class="text-gray-600 text-sm">Se encontraron <span class="font-semibold text-teal-600">${vacunas.length}</span> vacunas programadas</p>
+        </div>
+        <div class="flex gap-2">
+          <select id="filtroTipo" class="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500">
+            <option value="todos">Todos los tipos</option>
+            <option value="Perro">Perros</option>
+            <option value="Gato">Gatos</option>
+            <option value="otro">Otros</option>
+          </select>
+          <button id="btnFiltrarVacunas" class="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-lg shadow transition">
+            Filtrar
+          </button>
+        </div>
+      `;
+      vacunasListContainer.appendChild(headerSection);
+
+      // Contenedor para las tarjetas de vacunas
+      const vacunasGrid = document.createElement('div');
+      vacunasGrid.id = 'vacunasGrid';
+      vacunasGrid.classList.add('grid', 'grid-cols-1', 'md:grid-cols-2', 'gap-4');
+      vacunasListContainer.appendChild(vacunasGrid);
+
+      // Mostrar las vacunas
+      mostrarTarjetasVacunas(vacunas, vacunasGrid);
+
+      // Añadir event listener para el filtro
+      document.getElementById('btnFiltrarVacunas').addEventListener('click', () => {
+        const filtroTipo = document.getElementById('filtroTipo').value;
+        
+        let vacunasFiltradas = vacunas;
+        if (filtroTipo !== 'todos') {
+          vacunasFiltradas = vacunas.filter(v => 
+            filtroTipo === 'otro' 
+              ? v.tipoMascota !== 'Perro' && v.tipoMascota !== 'Gato'
+              : v.tipoMascota === filtroTipo
+          );
+        }
+        
+        // Actualizar el contador
+        const countText = document.querySelector('#vacunasProximasList p');
+        if (countText) {
+          countText.innerHTML = `Se encontraron <span class="font-semibold text-teal-600">${vacunasFiltradas.length}</span> vacunas programadas`;
+        }
+        
+        // Mostrar las vacunas filtradas
+        mostrarTarjetasVacunas(vacunasFiltradas, vacunasGrid);
+      });
+    }
+
+    // Función auxiliar para mostrar las tarjetas de vacunas
+    function mostrarTarjetasVacunas(vacunas, contenedor) {
+      // Limpiar el contenedor
+      contenedor.innerHTML = '';
+      
+      if (vacunas.length === 0) {
+        contenedor.innerHTML = '<p class="col-span-2 text-center text-gray-500 py-4">No hay vacunas que coincidan con el filtro.</p>';
+        return;
+      }
+
+      // Agregar las vacunas al contenedor
+      vacunas.forEach(vacuna => {
+        const fechaFormateada = new Date(vacuna.fecha).toLocaleDateString();
+        const fechaAplicacionFormateada = vacuna.fechaAplicacion !== 'No especificada' 
+          ? new Date(vacuna.fechaAplicacion).toLocaleDateString() 
+          : 'No especificada';
+        
+        // Calcular días restantes
+        const hoy = new Date();
+        const fechaVacuna = new Date(vacuna.fecha);
+        const diasRestantes = Math.ceil((fechaVacuna - hoy) / (1000 * 60 * 60 * 24));
+        
+        // Determinar color de borde según proximidad
+        let borderColor = 'border-teal-500';
+        let badgeColor = 'bg-teal-100 text-teal-800';
+        let badgeText = `En ${diasRestantes} días`;
+        
+        if (diasRestantes <= 7) {
+          borderColor = 'border-orange-500';
+          badgeColor = 'bg-orange-100 text-orange-800';
+          badgeText = `¡Próxima! ${diasRestantes} días`;
+        }
+        if (diasRestantes <= 3) {
+          borderColor = 'border-red-500';
+          badgeColor = 'bg-red-100 text-red-800';
+          badgeText = `¡Urgente! ${diasRestantes} días`;
+        }
+        
+        const iconoAnimal = vacuna.tipoMascota.toLowerCase().includes('perro') ? '🐕' : 
+                           (vacuna.tipoMascota.toLowerCase().includes('gato') ? '🐈' : '🐾');
+        
+        const vacunaElement = document.createElement('div');
+        vacunaElement.classList.add('bg-white', 'p-4', 'rounded-lg', 'shadow-md', 'border-l-4', borderColor, 'hover:shadow-lg', 'transition');
+        vacunaElement.innerHTML = `
+          <div class="flex justify-between items-start">
+            <div class="flex-1">
+              <div class="flex items-center gap-2">
+                <span class="text-xl">${iconoAnimal}</span>
+                <h4 class="text-lg font-semibold text-gray-800">${vacuna.nombreMascota}</h4>
+              </div>
+              <p class="font-medium text-teal-600">${vacuna.vacuna}</p>
+              <div class="mt-2 space-y-1 text-sm">
+                <p class="text-gray-600"><span class="font-medium">Próxima dosis:</span> ${fechaFormateada}</p>
+                <p class="text-gray-600"><span class="font-medium">Dosis anterior:</span> ${fechaAplicacionFormateada}</p>
+                <p class="text-gray-600"><span class="font-medium">Veterinario:</span> ${vacuna.veterinario}</p>
+                <p class="text-gray-600"><span class="font-medium">Propietario:</span> ${vacuna.usuario}</p>
+                <p class="text-gray-600 text-xs">${vacuna.email}</p>
+              </div>
+            </div>
+            <div class="${badgeColor} font-semibold px-3 py-1 rounded-full text-xs whitespace-nowrap">
+              ${badgeText}
+            </div>
+          </div>
+        `;
+        contenedor.appendChild(vacunaElement);
+      });
+    }
+
+    // Llamar la función al cargar la página
+    document.addEventListener('DOMContentLoaded', () => {
+      // No llamamos de nuevo obtenerVacunasProximas aquí porque ya se llama en cargarDashboard
+      console.log("DOM cargado, esperando la autenticación del usuario...");
+    });
+
+
+    const totalRegistros = document.getElementById('totalRegistros');
+    const promedioRitmo = document.getElementById('promedioRitmo');
+    const promedioOxigeno = document.getElementById('promedioOxigeno');
+    const tablaResumen = document.getElementById('tablaResumen');
+
+
+
+    // Función principal para cargar el resumen de historiales
+    async function cargarResumenHistoriales() {
+        const usuariosRef = collection(db, "usuarios");
+        const querySnapshot = await getDocs(usuariosRef);
+
+        let total = 0;
+        let totalRitmo = 0;
+        let totalOxigeno = 0;
+        let mascotas = [];
+
+        // Iterar sobre los documentos de usuarios
+        for (const doc of querySnapshot.docs) {
+            const userData = doc.data();
+            const mascota = userData.mascota;
+
+            if (mascota && mascota.id) {
+                // Consultar los registros de esta mascota
+                const historialRef = collection(db, `usuarios/${doc.id}/historial/${mascota.id}/registros`);
+                const historialSnap = await getDocs(query(historialRef, orderBy("timestamp", "desc")));
+
+                // Iterar sobre los registros de historial
+                historialSnap.forEach((historialDoc) => {
+                    const data = historialDoc.data();
+                    total++;
+
+                    totalRitmo += data.ritmo ?? 0;
+                    totalOxigeno += data.oxigeno ?? 0;
+
+                    // Obtener los últimos registros
+                    mascotas.push({
+                        nombre: mascota.nombreMascota,
+                        ritmo: data.ritmo ?? "-",
+                        oxigeno: data.oxigeno ?? "-"
+                    });
+                });
+            }
+        }
+
+        // Actualizar los contadores en el dashboard
+        totalRegistros.innerText = total;
+        promedioRitmo.innerText = (totalRitmo / total).toFixed(1) + " BPM";
+        promedioOxigeno.innerText = (totalOxigeno / total).toFixed(1) + " %";
+
+        // Mostrar los últimos registros por mascota
+        mascotas.forEach((mascota) => {
+            const row = `
+                <tr class="hover:bg-teal-50">
+                    <td class="py-3 px-4 border-b">${mascota.nombre}</td>
+                    <td class="py-3 px-4 border-b">${mascota.ritmo}</td>
+                    <td class="py-3 px-4 border-b">${mascota.oxigeno}</td>
+                </tr>
+            `;
+            tablaResumen.innerHTML += row;
+        });
+    }
+
+    // Llamada a la función principal para cargar los datos
+    cargarResumenHistoriales();
+  </script>
+</head>
+
+<body class="min-h-screen flex flex-col bg-gray-50">
+  <!-- Navbar -->
+  <nav class="bg-teal-600 text-white px-6 py-3 flex justify-between items-center shadow-lg">
+    <div class="flex items-center space-x-4">
+      <img src="/img/vetcare-logo1.png" alt="VetCare Plus Logo" class="h-10 w-10">
+      <span class="text-xl font-semibold">VetCare Plus</span>
+    </div>
+    
+    <div class="flex items-center space-x-6">
+      <div class="flex items-center space-x-2">
+        <div class="flex items-center gap-3">
+            <span class="text-lg font-semibold flex items-center">
+                👋 Hola, <span id="nombre" class="ml-2"></span>
+            </span>
+            <img id="avatarUsuario" src="https://cdn-icons-png.flaticon.com/512/847/847969.png" alt="Avatar" class="h-8 w-8 rounded-full object-cover border-2 border-white">
+        </div>
+    </div>
+
+      <button 
+        onclick="cerrarSesion()"
+        class="bg-red-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-red-600 transition transform hover:scale-105 shadow-md"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+        Cerrar sesión
+      </button>
+    </div>
+  </nav>
+
+  <!-- Contenedor de Error -->
+  <div id="errorContainer" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4 fixed top-20 right-4 shadow-lg z-50 max-w-md animate-pulse">
+    <p id="errorMensaje">Error al cargar los datos</p>
+  </div>
+
+<!-- Main Content -->
+<main class="flex-1 p-8 bg-gradient-to-br from-teal-50 via-blue-50 to-white">
+  <div id="loading" class="flex justify-center items-center fixed inset-0 bg-white bg-opacity-80 z-50 hidden">
+    <div class="flex flex-col items-center">
+      <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-teal-500"></div>
+      <p class="mt-4 text-teal-600 font-semibold">Cargando datos...</p>
+    </div>
+  </div>
+
+  <div class="max-w-7xl mx-auto" id="contenidoDashboard">
+    <div class="flex justify-between items-center mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-800">¡Bienvenido Admin! 🐶🐱</h1>
+        <p class="text-gray-600 mt-2">Resumen de usuarios y mascotas.</p>
+      </div>
+      <button id="refreshButton" class="bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-lg shadow flex items-center gap-2 transition">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        Actualizar datos
+      </button>
+    </div>
+
+    <!-- Estadísticas -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-10">
+      <div class="bg-white p-6 rounded-xl shadow-md text-center hover:shadow-lg transition">
+        <div class="text-4xl font-bold text-teal-600" id="totalUsuarios">0</div>
+        <p class="text-gray-600 mt-2">Usuarios Registrados</p>
+      </div>
+
+      <div class="bg-white p-6 rounded-xl shadow-md text-center hover:shadow-lg transition">
+        <div class="text-4xl font-bold text-blue-600" id="totalMascotas">0</div>
+        <p class="text-gray-600 mt-2">Mascotas Registradas</p>
+      </div>
+
+      <div class="bg-white p-6 rounded-xl shadow-md text-center hover:shadow-lg transition">
+        <div class="text-4xl font-bold text-green-500" id="totalPerros">0</div>
+        <p class="text-gray-600 mt-2">Perros</p>
+        <div class="mt-2">🐕</div>
+      </div>
+
+      <div class="bg-white p-6 rounded-xl shadow-md text-center hover:shadow-lg transition">
+        <div class="text-4xl font-bold text-yellow-500" id="totalGatos">0</div>
+        <p class="text-gray-600 mt-2">Gatos</p>
+        <div class="mt-2">🐈</div>
+      </div>
+
+      <div class="bg-white p-6 rounded-xl shadow-md text-center hover:shadow-lg transition">
+        <div class="text-4xl font-bold text-blue-500" id="totalOtros">0</div>
+        <p class="text-gray-600 mt-2">Otros</p>
+        <div class="mt-2">🐾</div>
+      </div>
+    </div>
+
+    <!-- Lista de Mascotas con Buscador -->
+    <div class="bg-white p-6 rounded-xl shadow-md mb-10">
+      <div class="flex justify-between items-center mb-6">
+        <h3 class="text-2xl font-bold text-gray-700">Lista de Mascotas:</h3>
+
+        <div class="flex items-center">
+          <div class="relative">
+            <input 
+              type="text" 
+              id="buscadorMascotas" 
+              placeholder="Buscar mascota o dueño..." 
+              class="pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 w-64"
+            >
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+
+          <button 
+            id="filtrarBtn"
+            class="ml-2 bg-teal-500 text-white px-4 py-2 rounded-lg hover:bg-teal-600 transition"
+          >
+            Filtrar
+          </button>
+        </div>
+      </div>
+
+      <p id="resultadosFiltro" class="text-sm text-gray-600 mb-4"></p>
+
+      <!-- Mensaje sin datos -->
+      <div id="sinDatos" class="hidden text-center py-8">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+        </svg>
+        <h4 class="mt-4 text-xl font-semibold text-gray-600">No hay mascotas registradas</h4>
+        <p class="text-gray-500">Los usuarios registrados aún no han añadido mascotas</p>
+      </div>
+
+      <!-- Grid de mascotas -->
+      <div id="listaMascotas" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </div>
+
+    <!-- Resumen de Próximas Vacunas -->
+    <div id="resumenVacunas" class="bg-white p-6 rounded-xl shadow-md mt-6 mb-8">
+      <h2 class="text-2xl font-bold text-gray-800 mb-6">Próximas Vacunas 🩺</h2>
+      <div id="vacunasProximasList" class="space-y-6">
+      </div>
+    </div>
+    
+    <!-- Contenedor para Resumen de Historiales de PawMonitor -->
+    <div class="bg-white shadow-lg p-6 rounded-lg mb-6">
+      <h2 class="text-xl font-semibold text-gray-800">Resumen de Historiales de PawMonitor</h2>
+  
+      <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Contenedor de Total de Registros -->
+          <div class="bg-teal-100 p-4 rounded-lg text-center">
+              <p class="text-sm text-gray-600">Total de Registros</p>
+              <h3 id="totalRegistros" class="text-2xl font-semibold text-teal-600">0</h3>
+          </div>
+  
+          <!-- Contenedor Promedio de Ritmo Cardíaco -->
+          <div class="bg-teal-100 p-4 rounded-lg text-center">
+              <p class="text-sm text-gray-600">Promedio Ritmo Cardíaco (BPM)</p>
+              <h3 id="promedioRitmo" class="text-2xl font-semibold text-teal-600">0 BPM</h3>
+          </div>
+  
+          <!-- Contenedor Promedio de Oxígeno -->
+          <div class="bg-teal-100 p-4 rounded-lg text-center">
+              <p class="text-sm text-gray-600">Promedio Nivel de Oxígeno (%)</p>
+              <h3 id="promedioOxigeno" class="text-2xl font-semibold text-teal-600">0 %</h3>
+          </div>
+      </div>
+  
+      <!-- Tabla de Últimos Registros por Mascota -->
+      <div class="mt-6">
+        <h3 class="text-lg font-semibold text-gray-800">Últimos Registros por Mascota</h3>
+        <table class="w-full table-auto border-collapse text-center mt-4">
+            <thead>
+                <tr class="bg-teal-100">
+                    <th class="py-3 px-4 border-b-2 border-teal-300 text-gray-700">Mascota</th>
+                    <th class="py-3 px-4 border-b-2 border-teal-300 text-gray-700">Último Ritmo Cardíaco (BPM)</th>
+                    <th class="py-3 px-4 border-b-2 border-teal-300 text-gray-700">Último Nivel de Oxígeno (%)</th>
+                </tr>
+            </thead>
+            <tbody id="tablaResumen" class="text-gray-600">
+                <!-- Aquí se llenarán los datos dinámicamente -->
+            </tbody>
+        </table>
+    </div>
+  </div>
+</main>
+
+
+  <!-- Footer -->
+  <footer class="bg-white text-center py-4 text-gray-600 text-sm shadow-md">
+    <p>&copy; 2025 VetCare Plus. Todos los derechos reservados.</p>
+    <p class="text-xs mt-1">Versión 2.0</p>
+  </footer>
+</body>
+</html>

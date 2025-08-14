@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PawMonitor - VetCare Plus</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Versiones específicas compatibles -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.0.1/build/global/luxon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.2.0/dist/chartjs-adapter-luxon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@2.0.0"></script>
+</head>
+
+<body class="min-h-screen flex flex-col justify-between bg-gray-50">
+
+  <!-- Navbar -->
+  <nav class="bg-teal-600 text-white px-6 py-3 flex justify-between items-center shadow-lg">
+    <div class="flex items-center space-x-4">
+      <img src="/img/vetcare-logo1.png" alt="VetCare Plus Logo" class="h-10 w-10">
+      <span class="text-xl font-semibold">VetCare Plus</span>
+    </div>
+    <div class="flex items-center space-x-2">
+      <img src="/img/pawmonitor2.png" alt="PawMonitor" class="h-7 w-11">
+      <h2 class="text-lg font-semibold">PawMonitor</h2>
+    </div>
+    <a href="/principal" class="bg-gray-300 px-4 py-2 rounded-lg text-sm font-semibold text-gray-800 hover:bg-gray-400 transition">
+      Volver al Inicio
+    </a>
+  </nav>
+  
+  <!-- Título -->
+  <div class="text-center mt-8 mb-4">
+    <h1 id="tituloMascota" class="text-2xl font-bold text-gray-800">📡 Monitoreo de</h1>
+  </div>
+
+  <!-- Información de rangos normales -->
+  <div class="text-center mb-4">
+    <p class="text-sm text-gray-600">Rangos normales: Ritmo cardíaco: 70-120 BPM | Nivel de oxígeno: >95%</p>
+  </div>
+
+  <!-- Gráficos -->
+  <main class="flex-1 p-6 flex flex-col items-center justify-center">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-5xl">
+      <div class="bg-white p-6 rounded-lg shadow-lg border-l-4 border-red-500">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-semibold text-gray-700">❤️ Ritmo Cardíaco</h2>
+          <div class="flex items-center">
+            <div id="statusHeartRate" class="w-3 h-3 rounded-full bg-gray-300 mr-2"></div>
+            <p id="ritmoCardiaco" class="text-2xl font-bold text-red-500">-- BPM</p>
+          </div>
+        </div>
+        <div class="h-64">
+          <canvas id="graficoRitmo"></canvas>
+        </div>
+        <div class="mt-2 text-xs text-gray-500 text-right">
+          <p>Últimos 2 minutos de datos</p>
+        </div>
+      </div>
+
+      <div class="bg-white p-6 rounded-lg shadow-lg border-l-4 border-blue-500">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-semibold text-gray-700">🩸 Nivel de Oxígeno</h2>
+          <div class="flex items-center">
+            <div id="statusOxygen" class="w-3 h-3 rounded-full bg-gray-300 mr-2"></div>
+            <p id="nivelOxigeno" class="text-2xl font-bold text-blue-500">-- %</p>
+          </div>
+        </div>
+        <div class="h-64">
+          <canvas id="graficoOxigeno"></canvas>
+        </div>
+        <div class="mt-2 text-xs text-gray-500 text-right">
+          <p>Últimos 2 minutos de datos</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-8 bg-white p-6 rounded-lg shadow-lg w-full max-w-5xl">
+      <h2 class="text-lg font-semibold text-gray-700 mb-4">📊 Estadísticas de la sesión</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-gray-50 p-3 rounded text-center">
+          <p class="text-sm text-gray-600">BPM Mínimo</p>
+          <p id="minBPM" class="text-xl font-bold text-red-500">--</p>
+        </div>
+        <div class="bg-gray-50 p-3 rounded text-center">
+          <p class="text-sm text-gray-600">BPM Máximo</p>
+          <p id="maxBPM" class="text-xl font-bold text-red-500">--</p>
+        </div>
+        <div class="bg-gray-50 p-3 rounded text-center">
+          <p class="text-sm text-gray-600">SpO2 Mínimo</p>
+          <p id="minSpO2" class="text-xl font-bold text-blue-500">--%</p>
+        </div>
+        <div class="bg-gray-50 p-3 rounded text-center">
+          <p class="text-sm text-gray-600">SpO2 Máximo</p>
+          <p id="maxSpO2" class="text-xl font-bold text-blue-500">--%</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+    import { getDatabase, ref, onValue } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+    import { getFirestore, collection, getDocs, query, where, addDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCsweRiyLmBWfVnBg135gY5fMNH00j9Pys",
+      authDomain: "pawmonitor-10eba.firebaseapp.com",
+      databaseURL: "https://pawmonitor-10eba-default-rtdb.firebaseio.com/",
+      projectId: "pawmonitor-10eba",
+      storageBucket: "pawmonitor-10eba.appspot.com",
+      messagingSenderId: "1234567890",
+      appId: "1:1234567890:web:abcdef123456"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const database = getDatabase(app);
+    const auth = getAuth(app);
+
+    const refBPM = ref(database, "PawMonitor/ritmo_cardiaco");
+    const refSpO2 = ref(database, "PawMonitor/nivel_oxigeno");
+
+    let chart1 = null;
+    let chart2 = null;
+    
+    // Variables para estadísticas
+    let bpmValues = [];
+    let spo2Values = [];
+    let minBPM = Infinity;
+    let maxBPM = -Infinity;
+    let minSpO2 = Infinity;
+    let maxSpO2 = -Infinity;
+
+    // Agregar esto dentro de tu script type="module" existente, cerca del inicio pero después de inicializar Firebase
+    // Añade esta función para guardar datos periódicamente
+    function iniciarGuardadoPeriodico() {
+      // Variable para controlar si se está ejecutando el guardado periódico
+      let guardadoActivo = true;
+      
+      // Configurar intervalo de 5 segundos (5000 ms)
+      const intervalo = setInterval(async () => {
+        // Verificar si el usuario está autenticado
+        const user = auth.currentUser;
+        if (!user || !guardadoActivo) {
+          return;
+        }
+        
+        try {
+          // Obtener los valores actuales de ritmo cardíaco y oxígeno
+          if (ultimoRitmo > 0 && ultimoOxigeno > 0) {
+            // Consultar la información del usuario para obtener el ID del documento y mascota
+            const usersRef = collection(db, "usuarios");
+            const q = query(usersRef, where("uid", "==", user.uid));
+            const querySnapshot = await getDocs(q);
+
+            if (!querySnapshot.empty) {
+              const userDoc = querySnapshot.docs[0];
+              const userData = userDoc.data();
+              const mascota = userData.mascota;
+
+              if (mascota && mascota.id) {
+                const userDocId = userDoc.id;
+                const mascotaId = mascota.id;
+                
+                // Ruta al historial de la mascota
+                const historialRef = collection(db, `usuarios/${userDocId}/historial/${mascotaId}/registros`);
+                
+                // Datos para guardar
+                const registro = {
+                  timestamp: new Date(),
+                  ritmo: ultimoRitmo,
+                  oxigeno: ultimoOxigeno
+                };
+                
+                // Añadir documento a Firestore
+                await addDoc(historialRef, registro);
+                console.log("Datos guardados automáticamente:", ultimoRitmo, ultimoOxigeno);
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error al guardar datos automáticamente:", error);
+        }
+      }, 5000); // 5000 ms = 5 segundos
+      
+      // Detectar cuando el usuario cierra la página o cambia de pestaña
+      window.addEventListener('beforeunload', () => {
+        guardadoActivo = false;
+        clearInterval(intervalo);
+      });
+      
+      window.addEventListener('visibilitychange', () => {
+        // Pausar el guardado cuando la página no está visible
+        if (document.visibilityState === 'hidden') {
+          guardadoActivo = false;
+        } else {
+          guardadoActivo = true;
+        }
+      });
+    }
+
+    // Llamar a la función cuando se cargue la página
+    document.addEventListener("DOMContentLoaded", () => {
+      initializeCharts();
+      iniciarGuardadoPeriodico(); // Iniciar el guardado periódico
+      
+      // Actualizar hora cada segundo
+      setInterval(() => {
+        const horaElement = document.getElementById('horaActualizacion');
+        if (horaElement) {
+          horaElement.innerText = new Date().toLocaleTimeString();
+        }
+      }, 1000);
+    });
+
+    function initializeCharts() {
+      const ctx1 = document.getElementById('graficoRitmo');
+      const ctx2 = document.getElementById('graficoOxigeno');
+      
+      if (!ctx1 || !ctx2) {
+        console.error("No se encontraron los elementos canvas");
+        return;
+      }
+
+      // Configuración para gráficos en tiempo real
+      Chart.defaults.color = '#666';
+      Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
+
+      // Configurar eje x compartido por ambos gráficos
+      const commonXAxes = {
+        type: 'realtime',
+        realtime: {
+          duration: 120000, // 2 minutos
+          refresh: 1000,
+          delay: 1000,
+          onRefresh: function() {
+            // Función vacía pero necesaria
+          }
+        },
+        grid: {
+          display: true,
+          color: 'rgba(0, 0, 0, 0.05)'
+        },
+        ticks: {
+          autoSkip: true,
+          maxTicksLimit: 5
+        }
+      };
+      
+      // Gráfico de ritmo cardíaco
+      chart1 = new Chart(ctx1.getContext('2d'), {
+        type: 'line',
+        data: {
+          datasets: [{
+            label: 'BPM',
+            data: [], // Empezar con un array vacío
+            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+            borderColor: 'rgba(255, 99, 132, 1)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: 'rgba(255, 99, 132, 1)',
+            tension: 0.3,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            intersect: false,
+            mode: 'index'
+          },
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              enabled: true,
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              titleFont: {
+                size: 12
+              },
+              bodyFont: {
+                size: 12
+              }
+            }
+          },
+          scales: {
+            x: commonXAxes,
+            y: {
+              min: 50,
+              max: 200,
+              grid: {
+                color: 'rgba(0, 0, 0, 0.05)'
+              },
+              ticks: {
+                stepSize: 30
+              }
+            }
+          }
+        }
+      });
+
+      // Gráfico de oxígeno
+      chart2 = new Chart(ctx2.getContext('2d'), {
+        type: 'line',
+        data: {
+          datasets: [{
+            label: 'SpO2 %',
+            data: [], // Empezar con un array vacío
+            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: 'rgba(54, 162, 235, 1)',
+            tension: 0.3,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            intersect: false,
+            mode: 'index'
+          },
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              enabled: true,
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              titleFont: {
+                size: 12
+              },
+              bodyFont: {
+                size: 12
+              }
+            }
+          },
+          scales: {
+            x: commonXAxes,
+            y: {
+              min: 70,
+              max: 100,
+              grid: {
+                color: 'rgba(0, 0, 0, 0.05)'
+              },
+              ticks: {
+                stepSize: 5
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Cargar datos del usuario y mascota
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        console.warn("Usuario no autenticado");
+        return;
+      }
+      
+      const uid = user.uid;
+
+      try {
+        const usersRef = collection(db, "usuarios");
+        const q = query(usersRef, where("uid", "==", uid));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+          const userDoc = querySnapshot.docs[0];
+          const userData = userDoc.data();
+          const mascota = userData.mascota;
+
+          if (mascota && mascota.nombreMascota) {
+            const tituloElement = document.getElementById('tituloMascota');
+            if (tituloElement) {
+              tituloElement.innerText = `📡 Monitoreo de ${mascota.nombreMascota}`;
+            }
+          } else {
+            console.warn("No se encontró información de la mascota");
+          }
+        } else {
+          console.warn("No se encontró el documento del usuario");
+        }
+
+      } catch (error) {
+        console.error("Error al obtener datos del usuario:", error);
+      }
+    });
+
+    // Funciones para colorear indicadores basados en rango normal
+    function updateHeartRateStatus(bpm) {
+      const statusElement = document.getElementById('statusHeartRate');
+      const valueElement = document.getElementById('ritmoCardiaco');
+      
+      if (!statusElement || !valueElement) return;
+      
+      if (bpm === 0) {
+        statusElement.className = "w-3 h-3 rounded-full bg-gray-300 mr-2";
+        valueElement.className = "text-2xl font-bold text-gray-500";
+        valueElement.textContent = "-- BPM";
+      } else if (bpm >= 70 && bpm <= 120) {
+        statusElement.className = "w-3 h-3 rounded-full bg-green-500 mr-2";
+        valueElement.className = "text-2xl font-bold text-green-500";
+        valueElement.textContent = `${bpm} BPM`;
+      } else if (bpm < 70) {
+        statusElement.className = "w-3 h-3 rounded-full bg-yellow-500 mr-2";
+        valueElement.className = "text-2xl font-bold text-yellow-500";
+        valueElement.textContent = `${bpm} BPM`;
+      } else {
+        statusElement.className = "w-3 h-3 rounded-full bg-red-500 mr-2";
+        valueElement.className = "text-2xl font-bold text-red-500";
+        valueElement.textContent = `${bpm} BPM`;
+      }
+    }
+
+    function updateOxygenStatus(spo2) {
+      const statusElement = document.getElementById('statusOxygen');
+      const valueElement = document.getElementById('nivelOxigeno');
+      
+      if (!statusElement || !valueElement) return;
+      
+      if (spo2 === 0) {
+        statusElement.className = "w-3 h-3 rounded-full bg-gray-300 mr-2";
+        valueElement.className = "text-2xl font-bold text-gray-500";
+        valueElement.textContent = "-- %";
+      } else if (spo2 >= 95) {
+        statusElement.className = "w-3 h-3 rounded-full bg-green-500 mr-2";
+        valueElement.className = "text-2xl font-bold text-green-500";
+        valueElement.textContent = `${spo2} %`;
+      } else if (spo2 >= 90) {
+        statusElement.className = "w-3 h-3 rounded-full bg-yellow-500 mr-2";
+        valueElement.className = "text-2xl font-bold text-yellow-500";
+        valueElement.textContent = `${spo2} %`;
+      } else {
+        statusElement.className = "w-3 h-3 rounded-full bg-red-500 mr-2";
+        valueElement.className = "text-2xl font-bold text-red-500";
+        valueElement.textContent = `${spo2} %`;
+      }
+    }
+
+        // Función para guardar datos en el historial de Firestore
+    async function guardarEnHistorial(ritmo, oxigeno) {
+      try {
+        // Obtener usuario actual
+        const user = auth.currentUser;
+        if (!user) return;
+
+        // Consultar la información del usuario para obtener el ID del documento y mascota
+        const usersRef = collection(db, "usuarios");
+        const q = query(usersRef, where("uid", "==", user.uid));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+          const userDoc = querySnapshot.docs[0];
+          const userData = userDoc.data();
+          const mascota = userData.mascota;
+
+          if (mascota && mascota.id) {
+            const userDocId = userDoc.id;
+            const mascotaId = mascota.id;
+            
+            // Ruta al historial de la mascota
+            const historialRef = collection(db, `usuarios/${userDocId}/historial/${mascotaId}/registros`);
+            
+            // Datos para guardar
+            const registro = {
+              timestamp: new Date(),
+              ritmo: ritmo,
+              oxigeno: oxigeno
+            };
+            
+            // Añadir documento a Firestore
+            await addDoc(historialRef, registro);
+            console.log("Datos guardados en historial");
+          }
+        }
+      } catch (error) {
+        console.error("Error al guardar en historial:", error);
+      }
+    }
+
+    // Actualizar estadísticas
+    function updateStats(bpm, spo2) {
+      if (bpm > 0) {
+        bpmValues.push(bpm);
+        minBPM = Math.min(minBPM, bpm);
+        maxBPM = Math.max(maxBPM, bpm);
+        
+        const minBPMElement = document.getElementById('minBPM');
+        const maxBPMElement = document.getElementById('maxBPM');
+        
+        if (minBPMElement) minBPMElement.textContent = minBPM;
+        if (maxBPMElement) maxBPMElement.textContent = maxBPM;
+      }
+      
+      if (spo2 > 0) {
+        spo2Values.push(spo2);
+        minSpO2 = Math.min(minSpO2, spo2);
+        maxSpO2 = Math.max(maxSpO2, spo2);
+        
+        const minSpO2Element = document.getElementById('minSpO2');
+        const maxSpO2Element = document.getElementById('maxSpO2');
+        
+        if (minSpO2Element) minSpO2Element.textContent = minSpO2 + '%';
+        if (maxSpO2Element) maxSpO2Element.textContent = maxSpO2 + '%';
+      }
+    }
+
+      // Actualizar datos en tiempo real - Ritmo cardíaco
+      let ultimoRitmo = 0;
+      let ultimoOxigeno = 0;
+      let ultimaActualizacion = 0;
+
+      onValue(refBPM, (snapshot) => {
+        const ritmo = snapshot.val() || 0;
+        ultimoRitmo = ritmo;
+        
+        // Actualizar estado y valor actual
+        updateHeartRateStatus(ritmo);
+        
+        // Añadir al gráfico si está inicializado
+        if (chart1 && chart1.data && chart1.data.datasets) {
+          chart1.data.datasets[0].data.push({
+            x: Date.now(),
+            y: ritmo
+          });
+          chart1.update('quiet');
+        }
+        
+        // Actualizar estadísticas
+        updateStats(ritmo, null);
+        
+        // Intentar guardar en historial (solo si tenemos ambos valores y ha pasado un minuto)
+        const ahora = Date.now();
+        if (ultimoRitmo > 0 && ultimoOxigeno > 0 && (ahora - ultimaActualizacion > 60000)) {
+          guardarEnHistorial(ultimoRitmo, ultimoOxigeno);
+          ultimaActualizacion = ahora;
+        }
+      });
+
+      onValue(refSpO2, (snapshot) => {
+        const oxigeno = snapshot.val() || 0;
+        ultimoOxigeno = oxigeno;
+        
+        // Actualizar estado y valor actual
+        updateOxygenStatus(oxigeno);
+        
+        // Añadir al gráfico si está inicializado
+        if (chart2 && chart2.data && chart2.data.datasets) {
+          chart2.data.datasets[0].data.push({
+            x: Date.now(),
+            y: oxigeno
+          });
+          chart2.update('quiet');
+        }
+        
+        // Actualizar estadísticas
+        updateStats(null, oxigeno);
+        
+        // Intentar guardar en historial (solo si tenemos ambos valores y ha pasado un minuto)
+        const ahora = Date.now();
+        if (ultimoRitmo > 0 && ultimoOxigeno > 0 && (ahora - ultimaActualizacion > 60000)) {
+          guardarEnHistorial(ultimoRitmo, ultimoOxigeno);
+          ultimaActualizacion = ahora;
+        }
+      });
+
+  </script>
+
+  <!-- Footer -->
+  <footer class="bg-white text-center py-4 text-gray-600 text-sm shadow-md">
+    <p>&copy; 2025 VetCare Plus. Todos los derechos reservados.</p>
+    <p class="text-xs">Última actualización: <span id="horaActualizacion"></span></p>
+  </footer>
+
+</body>
+</html>

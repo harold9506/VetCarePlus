@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Próximas Vacunas - VetCare Plus</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import {
+      getFirestore,
+      collection,
+      getDocs,
+      query,
+      where,
+      doc,
+      updateDoc,
+      arrayUnion,
+      getDoc
+    } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+    // Configuración de Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyCsweRiyLmBWfVnBg135gY5fMNH00j9Pys",
+      authDomain: "pawmonitor-10eba.firebaseapp.com",
+      projectId: "pawmonitor-10eba",
+      storageBucket: "pawmonitor-10eba.appspot.com",
+      messagingSenderId: "1033444392498",
+      appId: "1:1033444392498:web:12f2fcda392a316abfc62b"
+    };
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    // Obtiene y muestra las próximas vacunas
+    async function obtenerVacunasProximas(uid) {
+      try {
+        const vacunasProximas = [];
+        const usersRef = collection(db, 'usuarios');
+        const q = query(usersRef, where("uid", "==", uid));
+        const snap = await getDocs(q);
+        if (snap.empty) {
+          mostrarMensajeSinVacunas();
+          return;
+        }
+        const userDoc = snap.docs[0];
+        const userData = userDoc.data();
+
+        if (userData.mascota?.carnetVacunas) {
+          userData.mascota.carnetVacunas.forEach(v => {
+            if (v.fechaProxima && new Date(v.fechaProxima) > new Date()) {
+              vacunasProximas.push({
+                nombreMascota: userData.mascota.nombreMascota,
+                tipoMascota: userData.mascota.tipoMascota,
+                vacuna: v.nombreVacuna,
+                fecha: v.fechaProxima,
+                fechaAplicacion: v.fechaAplicacion,
+                veterinario: v.veterinario,
+                propietario: userData.dueño?.nombre || userData.nombre
+              });
+            }
+          });
+        }
+
+        vacunasProximas.sort((a,b)=> new Date(a.fecha) - new Date(b.fecha));
+        mostrarVacunasProximas(vacunasProximas);
+      } catch (e) {
+        console.error(e);
+        mostrarMensajeSinVacunas();
+      }
+    }
+
+    // Renderiza las tarjetas de vacunas
+    function mostrarVacunasProximas(vacunas) {
+      const cont = document.getElementById("vacunasProximasList");
+      cont.innerHTML = '';
+      if (!vacunas.length) {
+        mostrarMensajeSinVacunas();
+        return;
+      }
+      const grid = document.createElement('div');
+      grid.className = 'grid grid-cols-1 md:grid-cols-2 gap-4';
+      vacunas.forEach(v => {
+        const dias = Math.ceil((new Date(v.fecha) - new Date()) / (1000*60*60*24));
+        let badge = `En ${dias} días`;
+        let color = 'teal';
+        if (dias <= 7) color = 'orange', badge = `¡Próxima! ${dias} días`;
+        if (dias <= 3) color = 'red', badge = `¡Urgente! ${dias} días`;
+
+        const card = document.createElement('div');
+        card.className = `bg-white p-4 rounded-lg shadow border-l-4 border-${color}-500`;
+        card.innerHTML = `
+          <div class="flex justify-between">
+            <div>
+              <h4 class="font-semibold">${v.nombreMascota} (${v.tipoMascota})</h4>
+              <p><strong>Vacuna:</strong> ${v.vacuna}</p>
+              <p><strong>Aplicada:</strong> ${new Date(v.fechaAplicacion).toLocaleDateString()}</p>
+              <p><strong>Próxima:</strong> ${new Date(v.fecha).toLocaleDateString()}</p>
+              <p><strong>Veterinario:</strong> ${v.veterinario}</p>
+              <p class="text-sm text-gray-500"><strong>Dueño:</strong> ${v.propietario}</p>
+            </div>
+            <span class="px-2 py-1 rounded-full bg-${color}-100 text-${color}-800 text-xs">${badge}</span>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+      cont.appendChild(grid);
+    }
+
+    function mostrarMensajeSinVacunas() {
+      document.getElementById("vacunasProximasList").innerHTML =
+        '<p class="text-center text-gray-500">No hay vacunas próximas.</p>';
+    }
+
+    // Agrega una nueva vacuna al carnet de la mascota
+    async function agregarVacuna(event) {
+      event.preventDefault();
+      const nombreVacuna = document.getElementById('vacunaNombre').value.trim();
+      const fechaAplicacion = document.getElementById('fechaAplicacion').value;
+      const fechaProxima   = document.getElementById('fechaProxima').value;
+      const veterinario    = document.getElementById('veterinario').value.trim();
+
+      if (!nombreVacuna || !fechaAplicacion || !fechaProxima) {
+        alert("Completa todos los campos.");
+        return;
+      }
+      if (new Date(fechaProxima) <= new Date(fechaAplicacion)) {
+        alert("La fecha próxima debe ser posterior a la de aplicación.");
+        return;
+      }
+
+      try {
+        const user = auth.currentUser;
+        if (!user) throw new Error("No autenticado");
+        // Buscar documento de usuario por uid
+        const usersRef = collection(db, 'usuarios');
+        const q = query(usersRef, where("uid", "==", user.uid));
+        const snap = await getDocs(q);
+        if (snap.empty) throw new Error("Usuario no encontrado");
+        const userDoc = snap.docs[0];
+        const userDocRef = doc(db, 'usuarios', userDoc.id);
+
+        // Construir objeto de vacuna
+        const vacunaData = {
+          nombreVacuna,
+          fechaAplicacion,
+          fechaProxima,
+          veterinario
+        };
+
+        // Actualizar el array dentro del map "mascota"
+        await updateDoc(userDocRef, {
+          "mascota.carnetVacunas": arrayUnion(vacunaData)
+        });
+
+        alert("Vacuna añadida correctamente.");
+        obtenerVacunasProximas(user.uid);
+        event.target.reset();
+      } catch (e) {
+        console.error("Error al agregar vacuna:", e);
+        alert("No se pudo agregar la vacuna.");
+      }
+    }
+
+    // Cuando el estado de auth cambie
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        obtenerVacunasProximas(user.uid);
+        document.getElementById('formVacuna')
+          .addEventListener('submit', agregarVacuna);
+      } else {
+        // redirigir a login si lo deseas
+        console.log("Usuario no autenticado");
+      }
+    });
+  </script>
+</head>
+<body class="min-h-screen flex flex-col justify-between bg-gray-50">
+
+      <!-- Navbar -->
+      <nav class="bg-teal-600 text-white px-6 py-3 flex justify-between items-center shadow-lg">
+        <div class="flex items-center space-x-4">
+            <img src="/img/vetcare-logo1.png" alt="VetCare Plus Logo" class="h-10 w-10">
+            <span class="text-xl font-semibold">VetCare Plus</span>
+        </div>
+        <div class="flex items-center space-x-2">
+            <h2 class="text-lg font-semibold">Próximas Vacunas</h2>
+        </div>
+        <a href="/principal" class="bg-gray-300 px-4 py-2 rounded-lg text-sm font-semibold text-gray-800 hover:bg-gray-400 transition">
+            Volver al Inicio
+        </a>
+    </nav>
+
+  <div class="max-w-3xl mx-auto">
+    <h1 class="text-3xl font-bold text-teal-700 mb-6"></h1>
+    <div id="vacunasProximasList" class="mb-8"></div>
+
+    <div class="bg-white p-6 rounded-lg shadow-lg">
+      <h2 class="text-2xl font-bold text-teal-700 mb-4">Registrar Nueva Vacuna</h2>
+      <form id="formVacuna" class="space-y-4">
+        <div>
+          <label for="vacunaNombre" class="block text-sm font-medium text-gray-700">Vacuna</label>
+          <input type="text" id="vacunaNombre" class="mt-1 block w-full p-2 border rounded-md" required />
+        </div>
+        <div>
+          <label for="fechaAplicacion" class="block text-sm font-medium text-gray-700">Fecha de Aplicación</label>
+          <input type="date" id="fechaAplicacion" class="mt-1 block w-full p-2 border rounded-md" required />
+        </div>
+        <div>
+          <label for="fechaProxima" class="block text-sm font-medium text-gray-700">Fecha Próxima Dosis</label>
+          <input type="date" id="fechaProxima" class="mt-1 block w-full p-2 border rounded-md" required />
+        </div>
+        <div>
+          <label for="veterinario" class="block text-sm font-medium text-gray-700">Veterinario</label>
+          <input type="text" id="veterinario" class="mt-1 block w-full p-2 border rounded-md" />
+        </div>
+        <button type="submit" class="w-full bg-teal-600 text-white py-2 rounded-lg hover:bg-teal-700 transition">
+          Guardar Vacuna
+        </button>
+      </form>
+    </div>
+  </div>
+
+        <!-- Footer -->
+        <footer class="bg-white text-center py-4 text-gray-600 text-sm shadow-md">
+          &copy; 2025 VetCare Plus. Todos los derechos reservados.
+      </footer>
+</body>
+
+</html>

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inicio - VetCare Plus</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script type="module">
+        // Importar Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { 
+            getFirestore, 
+            doc, 
+            getDoc, 
+            collection, 
+            query, 
+            where, 
+            getDocs 
+        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+    
+        // Variables globales para Firebase
+        let auth, db;
+    
+        // Función para inicializar Firebase
+        async function inicializarFirebase() {
+            try {
+                // Configuración de Firebase
+                const firebaseConfig = {
+                    apiKey: "AIzaSyCsweRiyLmBWfVnBg135gY5fMNH00j9Pys",
+                    authDomain: "pawmonitor-10eba.firebaseapp.com",
+                    databaseURL: "https://pawmonitor-10eba-default-rtdb.firebaseio.com",
+                    projectId: "pawmonitor-10eba",
+                    storageBucket: "pawmonitor-10eba.appspot.com",
+                    messagingSenderId: "1033444392498",
+                    appId: "1:1033444392498:web:12f2fcda392a316abfc62b",
+                    measurementId: "G-X7LGHC933K"
+                };
+    
+                // Inicializar Firebase
+                const app = initializeApp(firebaseConfig);
+                // Aseguramos que la app está inicializada antes de obtener Firestore y Auth
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                console.log("Firebase inicializado correctamente");
+                return { app, db, auth };
+            } catch (error) {
+                console.error("Error al inicializar Firebase:", error);
+                throw error;
+            }
+        }
+        
+        // Función para cerrar sesión (disponible globalmente)
+        window.cerrarSesion = async function () {
+            try {
+                if (auth) {
+                    await signOut(auth);
+                    console.log("Sesión cerrada correctamente");
+                    window.location.replace("/inicio");
+                } else {
+                    console.error("Auth no está inicializado");
+                    window.location.replace("/inicio");
+                }
+            } catch (error) {
+                console.error("Error al cerrar sesión:", error);
+                // Mostrar error al usuario si existe la función
+                if (typeof mostrarError === 'function') {
+                    mostrarError("Error al cerrar sesión");
+                } else {
+                    alert("Error al cerrar sesión. Inténtalo de nuevo");
+                }
+            }
+        };
+        
+        // Inicializar Firebase y luego manejar la autenticación
+        inicializarFirebase().then(({ app, db: database, auth: authentication }) => {
+            console.log("Verificando estado de autenticación");
+            
+            // Actualizar las referencias globales
+            db = database;
+            auth = authentication;
+            
+            // Comprobar si hay un usuario autenticado
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    const userId = user.uid;
+                    console.log("ID de usuario autenticado:", userId);
+                    
+                    try {
+                        // Crear una consulta donde el campo uid coincida con el UID del usuario autenticado
+                        const usersRef = collection(db, "usuarios");
+                        const q = query(usersRef, where("uid", "==", userId));
+                        const querySnapshot = await getDocs(q);
+                        
+                        if (!querySnapshot.empty) {
+                            // Tomamos el primer documento que coincida
+                            const userDoc = querySnapshot.docs[0];
+                            const userData = userDoc.data();
+                            console.log("Datos del usuario encontrados:", userData);
+                            
+                            // Obtener el nombre del dueño
+                            const nombreUsuario = userData.dueño?.nombre || "Usuario";
+                            document.getElementById("nombre").textContent = nombreUsuario;
+                            
+                            // Obtener y mostrar la imagen del avatar si existe
+                            if (userData.dueño && userData.dueño.fotoUrl) {
+                                // Si la foto está guardada como string (URL directa o base64)
+                                document.getElementById("fotoPerfil").src = userData.dueño.fotoUrl;
+                            } else if (userData.fotoPerfil) {
+                                // Compatibilidad con estructura anterior
+                                if (typeof userData.fotoPerfil === 'string') {
+                                    document.getElementById("fotoPerfil").src = userData.fotoPerfil;
+                                } 
+                                else if (userData.fotoPerfil.url) {
+                                    document.getElementById("fotoPerfil").src = userData.fotoPerfil.url;
+                                }
+                            }
+                        } else {
+                            console.log("No se encontró ningún usuario con uid:", userId);
+                            document.getElementById("nombre").textContent = "Usuario";
+                        }
+                    } catch (error) {
+                        console.error("Error al buscar el usuario:", error);
+                        document.getElementById("nombre").textContent = "Usuario";
+                    }
+                } else {
+                    console.log("Usuario no autenticado, redirigiendo...");
+                    window.location.replace("/inicio");
+                }
+            });
+        }).catch(error => {
+            console.error("Error crítico al inicializar Firebase:", error);
+            // Manejo de errores de inicialización
+            document.getElementById("nombre").textContent = "Error de conexión";
+            // Podrías mostrar un mensaje de error al usuario
+        });
+    </script>
+        
+</head>
+<body class="min-h-screen flex flex-col bg-gray-50">
+    <!-- Navbar -->
+    <nav class="bg-teal-600 text-white px-6 py-3 flex justify-between items-center shadow-lg">
+        <div class="flex items-center space-x-4">
+            <img src="/img/vetcare-logo1.png" alt="VetCare Plus Logo" class="h-10 w-10">
+            <span class="text-xl font-semibold">VetCare Plus</span>
+        </div>
+        
+        <div class="flex items-center space-x-6">
+            <div class="flex items-center space-x-2">
+                <div class="flex items-center gap-3">
+                    <span class="text-lg font-semibold flex items-center">
+                        👋 Hola, <span id="nombre" class="ml-2"></span>
+                    </span>
+                    <img id="fotoPerfil" src="https://cdn-icons-png.flaticon.com/512/847/847969.png" alt="Avatar" class="h-8 w-8 rounded-full object-cover border-2 border-white">
+                </div>
+            </div>
+
+            <button 
+                onclick="cerrarSesion()"
+                class="bg-red-500 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 hover:bg-red-600 transition transform hover:scale-105 shadow-md">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Cerrar sesión
+          </button>
+        </div>
+    </nav>
+
+    <div class="flex flex-1">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-white shadow-2xl">
+            <div class="p-6">
+                <div class="mb-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Navegación</h3>
+                    <div class="h-1 bg-gradient-to-r from-teal-500 to-blue-500 rounded-full"></div>
+                </div>
+                
+                <ul class="space-y-2">
+                    <li>
+                        <a href="/principal" class="flex items-center text-teal-600 font-medium hover:text-teal-500 transition-all p-3 rounded-lg hover:bg-teal-50">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 mr-3">
+                                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                            </svg>
+                            Inicio
+                        </a>
+                    </li>
+
+                    <li>
+                        <a href="/nuevodash" class="flex items-center text-white font-medium bg-gradient-to-r from-teal-500 to-teal-600 p-3 rounded-lg shadow-md">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 mr-3">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="9" cy="7" r="4"></circle>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            </svg>
+                            CRM
+                        </a>
+                    </li>
+
+                    <li>
+                        <button
+                            onclick="toggleMenu('perfil')"
+                            class="flex w-full items-center text-gray-700 hover:text-teal-500 transition-all p-3 rounded-lg hover:bg-gray-50"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 mr-3">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <circle cx="12" cy="10" r="3"></circle>
+                                <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"></path>
+                            </svg>
+                            <span>Perfil</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-auto h-4 w-4 transition-transform" id="iconPerfil">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
+                        </button>
+                        <ul id="perfilMenu" class="hidden mt-2 pl-8 space-y-2 text-gray-600 transition-all">
+                            <li>
+                                <a href="/perfil" class="flex items-center py-2 hover:text-teal-500 transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 mr-2">
+                                        <path d="M12 20h9"></path>
+                                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                                    </svg>
+                                    Editar información
+                                </a>
+                            </li>
+                            <li>
+                                <a href="/cambiocontraseña" class="flex items-center py-2 hover:text-teal-500 transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 mr-2">
+                                        <path d="M12 20h9"></path>
+                                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                                    </svg>
+                                    Cambiar contraseña
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+
+                    <li>
+                        <button
+                            onclick="toggleMenu('seguimiento')"
+                            class="flex w-full items-center text-gray-700 hover:text-teal-500 transition-all p-3 rounded-lg hover:bg-gray-50"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 mr-3">
+                                <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                            </svg>
+                            <span>Seguimiento</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-auto h-4 w-4 transition-transform" id="iconSeguimiento">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
+                        </button>
+                        <ul id="seguimientoMenu" class="hidden mt-2 pl-8 space-y-2 text-gray-600 transition-all">
+                            <li>
+                                <a href="/pawmonitor" class="flex items-center text-gray-700 hover:text-teal-500 transition-colors py-2">
+                                    <img src="/img/pawmonitor.png" alt="PawMonitor" class="h-4 w-6 mr-2">
+                                    <span>PawMonitor</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="/historial" class="flex items-center py-2 hover:text-teal-500 transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 mr-2">
+                                        <path d="M3 3v18h18"></path>
+                                        <path d="m19 9-5 5-4-4-3 3"></path>
+                                    </svg>
+                                    Historial
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+
+                    <li>
+                        <a href="/vacunas" class="flex items-center text-gray-700 hover:text-teal-500 transition-all p-3 rounded-lg hover:bg-gray-50">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 mr-3">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                            </svg>
+                            Vacunas
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+         
+        <main class="flex-1 p-8 bg-gradient-to-br from-teal-50 via-blue-50 to-white">
+            <div class="max-w-7xl mx-auto">
+                <div class="flex justify-between items-center mb-8">
+                    <div>
+                        <h1 class="text-3xl font-bold text-gray-800">¡Bienvenido a VetCare Plus! 🐶🐱 👋</h1>
+                        <p class="text-gray-600 mt-2">Gestiona la información de tus mascotas de manera sencilla.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Carrusel de imágenes -->
+            <div class="relative mt-6 w-full max-w-3xl mx-auto">
+                <img id="carrusel-img" src="/img/imagen1.jpg" 
+                    class="w-full h-80 object-cover rounded-lg shadow-lg transition-opacity duration-700 opacity-100">
+            </div>
+
+            <!-- Mensaje emergente de cambio de contraseña -->
+            <div id="mensajeContraseña" class="fixed bottom-5 left-5 bg-yellow-500 text-white px-6 py-3 rounded-lg shadow-lg hidden transition-transform transform scale-95">
+                🔑 ¡Recuerda cambiar tu contraseña regularmente para mayor seguridad!
+            </div>
+
+        </main>
+
+    </div>
+    <!-- Footer -->
+    <footer class="bg-white text-center py-4 text-gray-600 text-sm shadow-md">
+        &copy; 2025 VetCare Plus. Todos los derechos reservados.
+    </footer>
+
+    <script>
+        function toggleMenu(menuId) {
+            const menu = document.getElementById(menuId + 'Menu');
+            const icon = document.getElementById('icon' + menuId.charAt(0).toUpperCase() + menuId.slice(1));
+            menu.classList.toggle('hidden');
+            icon.classList.toggle('rotate-90');
+        }
+
+
+        const imagenes = [
+            "/img/imagen1.jpg",
+            "/img/imagen2.jpg",
+            "/img/imagen3.jpg"
+        ];
+
+        let indice = 0;
+        const imagenElement = document.getElementById("carrusel-img");
+
+        function cambiarImagen() {
+            imagenElement.style.opacity = "0"; // Desvanece la imagen
+            setTimeout(() => {
+                indice = (indice + 1) % imagenes.length;
+                imagenElement.src = imagenes[indice];
+                imagenElement.style.opacity = "1"; // Vuelve a hacerla visible
+            }, 700);
+        }
+
+        setInterval(cambiarImagen, 3000); // Cambia la imagen cada 3 segundos
+    </script>
+    <!-- Mensaje emergente -->
+        <div id="mensajeEmergente" class="fixed bottom-5 right-5 bg-teal-600 text-white px-6 py-3 rounded-lg shadow-lg hidden transition-transform transform scale-95">
+            ¡Hola! No olvides revisar el estado de tu mascota en PawMonitor 🐾
+        </div>
+
+        <script>
+            // Mostrar mensaje emergente después de unos segundos
+            setTimeout(() => {
+                const mensaje = document.getElementById("mensajeEmergente");
+                mensaje.classList.remove("hidden");
+                mensaje.classList.add("scale-100");
+                
+                // Ocultar el mensaje después de unos segundos
+                setTimeout(() => {
+                    mensaje.classList.add("hidden");
+                }, 5000);
+            }, 2000);
+        </script>
+
+        <script>
+            // Mostrar el mensaje emergente después de 3 segundos
+            setTimeout(() => {
+                const mensaje = document.getElementById("mensajeContraseña");
+                mensaje.classList.remove("hidden");
+                mensaje.classList.add("scale-100");
+
+                // Ocultar el mensaje después de 6 segundos
+                setTimeout(() => {
+                    mensaje.classList.add("hidden");
+                }, 6000);
+            }, 3000);
+        </script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recuperar Contraseña - VetCare Plus</title>
+    <link rel="icon" type="image/png" href="/img/vetcare-logo.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <script type="module">
+        document.addEventListener("DOMContentLoaded", function () {
+            console.log("📢 Cargando Firebase...");
+    
+            // 🔥 Configuración de Firebase
+            const firebaseConfig = {
+                apiKey: "AIzaSyCsweRiyLmBWfVnBg135gY5fMNH00j9Pys",
+                authDomain: "pawmonitor-10eba.firebaseapp.com",
+                projectId: "pawmonitor-10eba",
+                storageBucket: "pawmonitor-10eba.appspot.com",
+                messagingSenderId: "1033444392498",
+                appId: "1:1033444392498:web:12f2fcda392a316abfc62b",
+                measurementId: "G-X7LGHC933K"
+            };
+    
+            // 🔄 Inicializar Firebase
+            firebase.initializeApp(firebaseConfig);
+            console.log("✅ Firebase inicializado correctamente");
+    
+            const auth = firebase.auth();
+            const db = firebase.firestore();
+    
+            document.querySelector("form").addEventListener("submit", async function (event) {
+                event.preventDefault();
+                console.log("🔹 Formulario enviado");
+    
+                const email = document.getElementById("email").value.trim();
+                const errorMessage = document.getElementById("error-message");
+                const successMessage = document.getElementById("success-message");
+                const submitButton = document.querySelector('button[type="submit"]');
+    
+                // Limpiar mensajes anteriores
+                errorMessage.textContent = "";
+                errorMessage.classList.add("hidden");
+                successMessage.textContent = "";
+                successMessage.classList.add("hidden");
+    
+                // Mostrar estado de carga
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Procesando...';
+    
+                try {
+                    console.log("🔄 Enviando enlace de recuperación...");
+    
+                    // OPCIÓN 1: Enviar directamente sin verificar Firestore
+                    // Firebase Auth se encarga de verificar si el usuario existe
+                    await auth.sendPasswordResetEmail(email);
+    
+                    successMessage.textContent = "Si este correo está registrado, recibirás un enlace para restablecer tu contraseña.";
+                    successMessage.classList.remove("hidden");
+                    
+                    // Resetear el formulario después del éxito
+                    document.getElementById("email").value = "";
+
+                    console.log("✅ Enlace de recuperación enviado");
+    
+                } catch (error) {
+                    console.error("🚨 Error al recuperar contraseña:", error.message);
+                    
+                    // Mensajes de error más específicos
+                    if (error.code === "auth/user-not-found") {
+                        errorMessage.textContent = "No existe una cuenta con este correo electrónico.";
+                    } else if (error.code === "auth/invalid-email") {
+                        errorMessage.textContent = "El formato del correo electrónico no es válido.";
+                    } else if (error.code === "auth/too-many-requests") {
+                        errorMessage.textContent = "Demasiados intentos. Inténtalo más tarde.";
+                    } else {
+                        errorMessage.textContent = "Ocurrió un error. Inténtalo de nuevo más tarde.";
+                    }
+                    
+                    errorMessage.classList.remove("hidden");
+                } finally {
+                    // Restaurar el botón
+                    submitButton.disabled = false;
+                    submitButton.textContent = "Enviar Enlace";
+                }
+            });
+        });
+    </script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-blue-100 via-teal-50 to-white flex flex-col justify-center items-center p-4">
+
+    <div class="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl text-center">
+        <!-- Logo -->
+        <div class="mb-6">
+            <img src="/img/vetcare-logo.png" alt="VetCare Plus" class="mx-auto w-16 h-16">
+            <h1 class="text-2xl font-bold text-gray-800 mt-2">Recuperar Contraseña</h1>
+            <p class="text-gray-500">Ingresa tu correo para restablecer tu contraseña</p>
+        </div>
+
+        <!-- Formulario -->
+        <form class="space-y-6 text-left">
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-700 mb-2">Correo Electrónico</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 7L12 13 2 7"/><path d="M2 7l10 6 10-6"/><rect x="2" y="3" width="20" height="14" rx="2"/></svg>
+                    </div>
+                    <input id="email" name="email" type="email" required
+                        class="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                        placeholder="ejemplo@email.com" />
+                </div>
+            </div>
+
+            <button type="submit"
+                class="w-full py-3 rounded-lg text-white bg-teal-600 hover:bg-teal-700 transition-all duration-300 shadow-md text-lg font-semibold">
+                Enviar Enlace
+            </button>
+
+            <p id="error-message" class="hidden text-red-500 text-sm mt-2"></p>
+            <p id="success-message" class="hidden text-green-500 text-sm mt-2"></p>
+
+        </form>
+
+        <!-- Volver al login -->
+        <div class="mt-6 text-center text-sm">
+            <a href="/inicio" class="font-medium text-teal-600 hover:text-teal-500">Volver al inicio de sesión</a>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="w-full text-center mt-8">
+        <p class="text-sm text-gray-600">&copy; 2025 VetCare Plus. Todos los derechos reservados.</p>
+    </div>
+
+</body>
+</html>

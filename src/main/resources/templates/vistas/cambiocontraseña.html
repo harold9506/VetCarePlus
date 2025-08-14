@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Cambio de contraseña - VetCare Plus</title>
+    <link rel="icon" type="image/png" href="/img/vetcare-logo.png">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Importar Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getAuth, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCsweRiyLmBWfVnBg135gY5fMNH00j9Pys",
+            authDomain: "pawmonitor-10eba.firebaseapp.com",
+            databaseURL: "https://pawmonitor-10eba-default-rtdb.firebaseio.com",
+            projectId: "pawmonitor-10eba",
+            storageBucket: "pawmonitor-10eba.appspot.com",
+            messagingSenderId: "1033444392498",
+            appId: "1:1033444392498:web:12f2fcda392a316abfc62b",
+            measurementId: "G-X7LGHC933K"
+        };
+    
+        // Inicializar Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        // Función para generar contraseña segura
+        function generarContraseñaSegura() {
+            const mayusculas = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+            const minusculas = 'abcdefghijklmnopqrstuvwxyz';
+            const numeros = '0123456789';
+            const caracteres = '!@#$%^&*()_+-=[]{}|;:,.<>?';
+            
+            let contraseña = '';
+            
+            // Asegurar al menos uno de cada tipo
+            contraseña += mayusculas[Math.floor(Math.random() * mayusculas.length)];
+            contraseña += minusculas[Math.floor(Math.random() * minusculas.length)];
+            contraseña += numeros[Math.floor(Math.random() * numeros.length)];
+            contraseña += caracteres[Math.floor(Math.random() * caracteres.length)];
+            
+            // Completar hasta 12 caracteres
+            const todosCaracteres = mayusculas + minusculas + numeros + caracteres;
+            while (contraseña.length < 12) {
+                contraseña += todosCaracteres[Math.floor(Math.random() * todosCaracteres.length)];
+            }
+            
+            // Mezclar la contraseña
+            return contraseña.split('').sort(() => Math.random() - 0.5).join('');
+        }
+
+        document.addEventListener("DOMContentLoaded", function () {
+            const form = document.querySelector("form");
+            const btnGenerarContraseña = document.getElementById('generar-contraseña');
+            const btnMostrarContraseñaActual = document.getElementById('mostrar-contraseña-actual');
+            const btnMostrarContraseñaNueva = document.getElementById('mostrar-contraseña-nueva');
+            const btnMostrarConfirmarContraseña = document.getElementById('mostrar-confirmar-contraseña');
+            const passwordActual = document.getElementById("password_actual");
+            const passwordNueva = document.getElementById("password_nueva");
+            const confirmarPassword = document.getElementById("confirm_password");
+            const alertError = document.getElementById("alert-error");
+            const alertSuccess = document.getElementById("alert-success");
+            
+            // Verificar si hay un usuario autenticado
+            auth.onAuthStateChanged(function(user) {
+                if (!user) {
+                    // No hay usuario autenticado, redirigir al inicio de sesión
+                    window.location.replace(window.location.origin + "/inicio");
+                }
+            });
+            
+            // Función para mostrar mensaje de error
+            function mostrarError(idCampo, mensaje) {
+                // Verificar si ya existe un mensaje de error
+                let errorExistente = document.getElementById(`error-${idCampo}`);
+                
+                if (!errorExistente) {
+                    const campo = document.getElementById(idCampo);
+                    const mensajeError = document.createElement('p');
+                    mensajeError.id = `error-${idCampo}`;
+                    mensajeError.className = 'text-red-500 text-xs mt-1';
+                    mensajeError.innerText = mensaje;
+                    campo.parentNode.appendChild(mensajeError);
+                    campo.classList.add('border-red-500');
+                }
+            }
+            
+            // Función para ocultar mensaje de error
+            function ocultarError(idCampo) {
+                const mensajeError = document.getElementById(`error-${idCampo}`);
+                if (mensajeError) {
+                    mensajeError.remove();
+                }
+                document.getElementById(idCampo).classList.remove('border-red-500');
+            }
+
+            // Evento para validar que la contraseña de confirmación coincida
+            confirmarPassword.addEventListener('input', function() {
+                if (passwordNueva.value !== confirmarPassword.value) {
+                    mostrarError('confirm_password', 'Las contraseñas no coinciden');
+                } else {
+                    ocultarError('confirm_password');
+                }
+            });
+
+            // Evento para generar contraseña
+            if (btnGenerarContraseña) {
+                btnGenerarContraseña.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const contraseñaGenerada = generarContraseñaSegura();
+                    passwordNueva.value = contraseñaGenerada;
+                    confirmarPassword.value = contraseñaGenerada;
+                    // Asegurarse de eliminar cualquier error de validación
+                    ocultarError('confirm_password');
+                });
+            }
+
+            // Eventos para mostrar/ocultar contraseña actual
+            if (btnMostrarContraseñaActual) {
+                btnMostrarContraseñaActual.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const passwordInput = document.getElementById('password_actual');
+                    const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                    passwordInput.setAttribute('type', type);
+                    this.innerHTML = type === 'password' ? 
+                        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>' :
+                        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>';
+                });
+            }
+
+            // Eventos para mostrar/ocultar contraseña nueva
+            if (btnMostrarContraseñaNueva) {
+                btnMostrarContraseñaNueva.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const passwordInput = document.getElementById('password_nueva');
+                    const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                    passwordInput.setAttribute('type', type);
+                    this.innerHTML = type === 'password' ? 
+                        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>' :
+                        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>';
+                });
+            }
+
+            // Eventos para mostrar/ocultar confirmar contraseña
+            if (btnMostrarConfirmarContraseña) {
+                btnMostrarConfirmarContraseña.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const confirmPasswordInput = document.getElementById('confirm_password');
+                    const type = confirmPasswordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                    confirmPasswordInput.setAttribute('type', type);
+                    this.innerHTML = type === 'password' ? 
+                        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>' :
+                        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5"><path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>';
+                });
+            }
+
+            form.addEventListener("submit", async function (event) {
+                event.preventDefault(); // Evitar recargar la página
+                
+                // Validar que las contraseñas coincidan antes de enviar
+                if (passwordNueva.value !== confirmarPassword.value) {
+                    mostrarError('confirm_password', 'Las contraseñas no coinciden');
+                    return;
+                }
+
+                // Validar que la contraseña nueva cumpla los requisitos de seguridad
+                const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+                if (!passwordPattern.test(passwordNueva.value)) {
+                    mostrarError('password_nueva', 'La contraseña debe contener al menos 8 caracteres, incluyendo mayúsculas, minúsculas, números y caracteres especiales');
+                    return;
+                }
+
+                // Obtener valores del formulario
+                const passwordActualValue = passwordActual.value;
+                const passwordNuevaValue = passwordNueva.value;
+                
+                // Referencia al botón
+                const submitButton = document.querySelector('button[type="submit"]');
+                
+                // Cambiar el estado del botón a "cargando"
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Actualizando...';
+                
+                // Ocultar mensajes anteriores
+                alertError.classList.add('hidden');
+                alertSuccess.classList.add('hidden');
+
+                try {
+                    // Obtener el usuario actual
+                    const user = auth.currentUser;
+                    
+                    if (user) {
+                        // Volver a autenticar al usuario para verificar la contraseña actual
+                        const credential = EmailAuthProvider.credential(
+                            user.email,
+                            passwordActualValue
+                        );
+                        
+                        await reauthenticateWithCredential(user, credential);
+                        
+                        // Actualizar la contraseña
+                        await updatePassword(user, passwordNuevaValue);
+                        
+                        // Mostrar mensaje de éxito
+                        alertSuccess.classList.remove('hidden');
+                        form.reset();
+                        
+                        // Redirigir después de un tiempo
+                        setTimeout(() => {
+                            window.location.replace(window.location.origin + "/principal");
+                        }, 3000);
+                    }
+
+                } catch (error) {
+                    // Restaurar el botón en caso de error
+                    submitButton.disabled = false;
+                    submitButton.textContent = "Cambiar Contraseña";
+                    
+                    console.error("Error al cambiar la contraseña:", error);
+                    
+                    // Mostrar mensaje de error específico
+                    if (error.code === "auth/wrong-password") {
+                        mostrarError('password_actual', 'La contraseña actual es incorrecta');
+                    } else {
+                        alertError.textContent = `Error: ${error.message}`;
+                        alertError.classList.remove('hidden');
+                    }
+                }
+            });
+        });
+    </script>
+</head>
+
+<body class="min-h-screen flex flex-col justify-between bg-gray-50">
+
+            <!-- Navbar -->
+            <nav class="bg-teal-600 text-white px-6 py-3 flex justify-between items-center shadow-lg">
+                <div class="flex items-center space-x-4">
+                    <img src="/img/vetcare-logo1.png" alt="VetCare Plus Logo" class="h-10 w-10">
+                    <span class="text-xl font-semibold">VetCare Plus</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <h2 class="text-lg font-semibold">Cambio de Contraseña</h2>
+                </div>
+                <a href="/principal" class="bg-gray-300 px-4 py-2 rounded-lg text-sm font-semibold text-gray-800 hover:bg-gray-400 transition">
+                    Volver al Inicio
+                </a>
+            </nav>
+
+    <div class="min-h-screen bg-gradient-to-br from-blue-100 via-teal-50 to-white flex flex-col justify-center items-center p-4">
+
+        <div class="w-full max-w-lg bg-white p-8 rounded-2xl shadow-xl">
+            <!-- Logo -->
+            <div class="text-center mb-6">
+                <img src="/img/vetcare-logo.png" alt="VetCare Plus" class="mx-auto w-16 h-16">
+                <h1 class="text-2xl font-bold text-gray-800 mt-2">Cambiar Contraseña</h1>
+                <p class="text-gray-500">Actualiza tu contraseña para mantener segura tu cuenta</p>
+            </div>
+    
+            <!-- Alertas -->
+            <div id="alert-error" class="hidden bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4 rounded" role="alert">
+                <p>Error al cambiar la contraseña.</p>
+            </div>
+            
+            <div id="alert-success" class="hidden bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-4 rounded" role="alert">
+                <p>¡Contraseña actualizada correctamente! Serás redirigido en breve...</p>
+            </div>
+    
+            <!-- Formulario -->
+            <form method="post" class="space-y-6">
+                <!-- Contraseña Actual -->
+                <div class="relative">
+                    <label for="password_actual" class="block text-sm font-medium text-gray-700">Contraseña Actual</label>
+                    <div class="relative">
+                        <input id="password_actual" name="password_actual" type="password" required placeholder="Ingresa tu contraseña actual"
+                            class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2 pr-10" />
+                        <button id="mostrar-contraseña-actual" type="button"
+                            class="absolute inset-y-0 right-2 flex items-center text-gray-500 hover:text-gray-700">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+    
+                <!-- Nueva Contraseña -->
+                <div class="relative">
+                    <label for="password_nueva" class="block text-sm font-medium text-gray-700">Nueva Contraseña</label>
+                    <div class="flex gap-2">
+                        <div class="relative flex-1">
+                            <input id="password_nueva" name="password_nueva" type="password" required placeholder="••••••••"
+                                class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2 pr-10" />
+                            <button id="mostrar-contraseña-nueva" type="button"
+                                class="absolute inset-y-0 right-2 flex items-center text-gray-500 hover:text-gray-700">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                                </svg>
+                            </button>
+                        </div>
+                        <button id="generar-contraseña" type="button"
+                            class="px-2 py-1 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-all duration-300 text-sm whitespace-nowrap">
+                            Generar
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">La contraseña debe contener mayúsculas, minúsculas, números y caracteres especiales</p>
+                </div>
+    
+                <!-- Confirmar Nueva Contraseña -->
+                <div class="relative">
+                    <label for="confirm_password" class="block text-sm font-medium text-gray-700">Confirmar Nueva Contraseña</label>
+                    <div class="relative">
+                        <input id="confirm_password" name="confirm_password" type="password" required placeholder="••••••••"
+                            class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-teal-500 focus:border-teal-500 mb-2 pr-10" />
+                        <button id="mostrar-confirmar-contraseña" type="button"
+                            class="absolute inset-y-0 right-2 flex items-center text-gray-500 hover:text-gray-700">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+    
+                <!-- Botones -->
+                <div class="flex space-x-4">
+                    <a href="/principal" class="flex-1 py-3 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-all duration-300 text-center font-medium">
+                        Cancelar
+                    </a>
+                    <button type="submit" class="flex-1 py-3 rounded-lg text-white bg-teal-600 hover:bg-teal-700 transition-all duration-300 shadow-md font-medium">
+                        Cambiar Contraseña
+                    </button>
+                </div>
+            </form>
+        </div>
+
+    </div>
+    
+
+    <!-- Footer -->
+    <div class="w-full text-center mt-8">
+        <p class="text-sm text-gray-600">&copy; 2025 VetCare Plus. Todos los derechos reservados.</p>
+    </div>
+</body>
+</html>

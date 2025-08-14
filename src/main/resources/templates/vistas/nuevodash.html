@@ -1,0 +1,1685 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM - VetCare Plus</title>
+    <link rel="icon" type="image/png" href="/img/vetcare-logo.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        .pulse-animation {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #0d9488 0%, #14b8a6 100%);
+        }
+        .glass-effect {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.9);
+        }
+        .notification-badge {
+            animation: bounce 1s infinite;
+        }
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+            60% { transform: translateY(-5px); }
+        }
+    </style>
+
+    <script type="module">
+        // Importar Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { 
+            getFirestore, 
+            collection, 
+            query, 
+            where, 
+            getDocs,
+            orderBy,
+            limit,
+            Timestamp,
+            addDoc,
+            doc,
+            setDoc,
+            updateDoc
+        } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
+        // Configuración de Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCsweRiyLmBWfVnBg135gY5fMNH00j9Pys",
+            authDomain: "pawmonitor-10eba.firebaseapp.com",
+            databaseURL: "https://pawmonitor-10eba-default-rtdb.firebaseio.com",
+            projectId: "pawmonitor-10eba",
+            storageBucket: "pawmonitor-10eba.appspot.com",
+            messagingSenderId: "1033444392498",
+            appId: "1:1033444392498:web:12f2fcda392a316abfc62b",
+            measurementId: "G-X7LGHC933K"
+        };
+
+        // Inicializar Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        // Variables globales
+        let currentUser;
+        let userData;
+        let userDocId;
+        let recordatoriosChart;
+        let alertasActivas = [];
+        
+        // Comprobar autenticación
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUser = user;
+                await cargarDatosUsuario();
+                await cargarCRM();
+                iniciarActualizacionTiempoReal();
+            } else {
+                window.location.replace("/inicio");
+            }
+        });
+
+        // Cargar datos del usuario
+        async function cargarDatosUsuario() {
+            try {
+                const usersRef = collection(db, "usuarios");
+                const q = query(usersRef, where("uid", "==", currentUser.uid));
+                const querySnapshot = await getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    const userDoc = querySnapshot.docs[0];
+                    userDocId = userDoc.id;
+                    userData = userDoc.data();
+                    
+                    // Actualizar UI con datos del usuario
+                    document.getElementById("nombre").textContent = userData.dueño?.nombre || "Usuario";
+                    document.getElementById("emailUsuario").textContent = userData.dueño?.email || currentUser.email;
+                    
+                    // Cargar foto de perfil
+                    const fotoElement = document.getElementById("fotoPerfil");
+                    if (userData.dueño && userData.dueño.fotoUrl) {
+                        fotoElement.src = userData.dueño.fotoUrl;
+                    } else if (userData.fotoPerfil) {
+                        fotoElement.src = typeof userData.fotoPerfil === 'string' 
+                            ? userData.fotoPerfil 
+                            : (userData.fotoPerfil.url || "https://cdn-icons-png.flaticon.com/512/847/847969.png");
+                    }
+                }
+            } catch (error) {
+                console.error("Error al cargar datos de usuario:", error);
+                mostrarNotificacion("Error al cargar datos del usuario", "error");
+            }
+        }
+
+        // Cargar datos del CRM
+        async function cargarCRM() {
+            try {
+                // Mostrar datos de la mascota
+                if (userData.mascota) {
+                    document.getElementById("mascotaNombre").textContent = userData.mascota.nombreMascota || "Tu mascota";
+                    document.getElementById("mascotaTipo").textContent = userData.mascota.tipoMascota || "Mascota";
+                    document.getElementById("mascotaRaza").textContent = userData.mascota.raza || "Raza no especificada";
+                    document.getElementById("mascotaEdad").textContent = calcularEdad(userData.mascota.fechaNacimiento) || "Edad no especificada";
+                    document.getElementById("proximaVacuna").textContent = await calcularProximaVacuna();
+                    
+                    // Cargar estadísticas
+                    await cargarEstadisticas();
+                    
+                    // Generar recordatorios automáticos
+                    await generarRecordatorios();
+                    
+                    // Cargar gráficos de salud
+                    await cargarGraficoSalud();
+                    await cargarGraficoActividad();
+                    
+                    // Cargar historial de interacciones
+                    await cargarHistorialInteracciones();
+                    
+                    // Verificar alertas
+                    await verificarAlertas();
+
+                    
+                    await actualizarPawMonitorStatus();
+
+                }
+            } catch (error) {
+                console.error("Error al cargar datos CRM:", error);
+                mostrarNotificacion("Error al cargar datos del CRM", "error");
+            }
+        }
+
+        // Calcular edad de la mascota
+        function calcularEdad(fechaNacimiento) {
+            if (!fechaNacimiento) return null;
+            const hoy = new Date();
+            const nacimiento = new Date(fechaNacimiento);
+            const edad = Math.floor((hoy - nacimiento) / (365.25 * 24 * 60 * 60 * 1000));
+            return `${edad} años`;
+        }
+
+        // Cargar estadísticas del dashboard
+        async function cargarEstadisticas() {
+            try {
+                // Obtener datos de PawMonitor de los últimos 30 días
+                const lecturasRef = collection(db, `usuarios/${userDocId}/historial/${userData.mascota.id}/registros`);
+                const q = query(lecturasRef, orderBy("timestamp", "desc"), limit(30));
+                const querySnapshot = await getDocs(q);
+                
+                let totalLecturas = 0;
+                let promedioRitmo = 0;
+                let promedioOxigeno = 0;
+                let alertasGeneradas = 0;
+                
+                querySnapshot.forEach(doc => {
+                    const data = doc.data();
+                    totalLecturas++;
+                    promedioRitmo += data.ritmo || 0;
+                    promedioOxigeno += data.oxigeno || 0;
+                    
+                    // Verificar si generó alerta
+                    if (data.ritmo > 100 || data.ritmo < 60 || data.oxigeno < 95) {
+                        alertasGeneradas++;
+                    }
+                });
+                
+                if (totalLecturas > 0) {
+                    promedioRitmo = Math.round(promedioRitmo / totalLecturas);
+                    promedioOxigeno = Math.round(promedioOxigeno / totalLecturas);
+                }
+                
+                // Actualizar estadísticas en la UI
+                document.getElementById("totalLecturas").textContent = totalLecturas;
+                document.getElementById("promedioRitmo").textContent = `${promedioRitmo} BPM`;
+                document.getElementById("promedioOxigeno").textContent = `${promedioOxigeno}%`;
+                document.getElementById("alertasGeneradas").textContent = alertasGeneradas;
+                
+                // Actualizar indicadores de estado
+                actualizarIndicadoresEstado(promedioRitmo, promedioOxigeno);
+                
+            } catch (error) {
+                console.error("Error al cargar estadísticas:", error);
+            }
+        }
+
+        // Actualizar indicadores de estado
+        function actualizarIndicadoresEstado(ritmo, oxigeno) {
+            const estadoElement = document.getElementById("estadoMascota");
+            const estadoTexto = document.getElementById("estadoTexto");
+            
+            if (ritmo >= 70 && ritmo <= 90 && oxigeno >= 95) {
+                estadoElement.className = "inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800";
+                estadoTexto.textContent = "Saludable";
+            } else if (ritmo >= 60 && ritmo <= 100 && oxigeno >= 90) {
+                estadoElement.className = "inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800";
+                estadoTexto.textContent = "Monitoreando";
+            } else {
+                estadoElement.className = "inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800";
+                estadoTexto.textContent = "Requiere atención";
+            }
+        }
+
+ async function calcularProximaVacuna() {
+  try {
+    const usersRef = collection(db, "usuarios");
+    const q = query(usersRef, where("uid", "==", currentUser.uid));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      const userDoc = querySnapshot.docs[0];
+      const userData = userDoc.data();
+
+      const carnet = userData?.mascota?.carnetVacunas;
+      if (Array.isArray(carnet) && carnet.length > 0) {
+        const futuras = carnet
+          .filter(v => v.fechaProxima && new Date(v.fechaProxima) > new Date())
+          .sort((a, b) => new Date(a.fechaProxima) - new Date(b.fechaProxima));
+
+        if (futuras.length > 0) {
+          const fecha = new Date(futuras[0].fechaProxima);
+          return fecha.toLocaleDateString("es-ES");
+        }
+      }
+    }
+
+    return "No programada";
+  } catch (error) {
+    console.error("Error al calcular próxima vacuna:", error);
+    return "No programada";
+  }
+}
+
+
+        // Generar recordatorios basados en datos existentes
+        async function generarRecordatorios() {
+            try {
+                const recordatoriosContainer = document.getElementById("recordatorios");
+                recordatoriosContainer.innerHTML = "";
+                
+                // Obtener recordatorios existentes
+                const recordatoriosRef = collection(db, `usuarios/${userDocId}/recordatorios`);
+                const q = query(recordatoriosRef, orderBy("fecha", "asc"));
+                const querySnapshot = await getDocs(q);
+                
+                const recordatorios = [];
+                querySnapshot.forEach(doc => {
+                    const data = doc.data();
+                    recordatorios.push({
+                        id: doc.id,
+                        ...data,
+                        fecha: data.fecha instanceof Timestamp ? data.fecha.toDate() : new Date(data.fecha)
+                    });
+                });
+                
+                // Si no hay recordatorios, crear algunos automáticos
+                if (recordatorios.length === 0) {
+                    await crearRecordatoriosAutomaticos();
+                    return generarRecordatorios(); // Volver a cargar
+                }
+                
+                // Mostrar recordatorios
+                recordatorios.forEach(recordatorio => {
+                    const diasRestantes = Math.ceil((recordatorio.fecha - new Date()) / (1000 * 60 * 60 * 24));
+                    const colorClase = diasRestantes <= 7 
+                        ? "bg-red-100 border-red-500" 
+                        : diasRestantes <= 30
+                            ? "bg-yellow-100 border-yellow-500"
+                            : "bg-green-100 border-green-500";
+                            
+                    const iconoClase = recordatorio.tipo === "Vacuna"
+                        ? "bg-blue-500"
+                        : recordatorio.tipo === "Revisión"
+                            ? "bg-purple-500"
+                            : "bg-teal-500";
+                            
+                    const recordatorioHTML = `
+                        <div class="flex items-start p-4 mb-3 rounded-lg border-l-4 ${colorClase} card-hover">
+                            <div class="flex-shrink-0">
+                                <span class="inline-flex p-2 rounded-md ${iconoClase} text-white">
+                                    ${getIconoRecordatorio(recordatorio.tipo)}
+                                </span>
+                            </div>
+                            <div class="ml-4 flex-1">
+                                <h4 class="text-sm font-semibold">${recordatorio.titulo}</h4>
+                                <p class="mt-1 text-xs text-gray-600">${recordatorio.descripcion || ''}</p>
+                                <p class="mt-1 text-xs text-gray-500">
+                                    ${recordatorio.fecha.toLocaleDateString('es-ES')} 
+                                    ${diasRestantes > 0 ? `(${diasRestantes} días)` : '(Vencido)'}
+                                </p>
+                            </div>
+                            <button onclick="completarRecordatorio('${recordatorio.id}')" class="text-gray-400 hover:text-green-600 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                </svg>
+                            </button>
+                        </div>
+                    `;
+                    
+                    recordatoriosContainer.innerHTML += recordatorioHTML;
+                });
+                
+            } catch (error) {
+                console.error("Error al generar recordatorios:", error);
+            }
+        }
+
+        // Crear recordatorios automáticos
+        async function crearRecordatoriosAutomaticos() {
+            const recordatoriosAutomaticos = [
+                {
+                    tipo: "Vacuna",
+                    titulo: "Vacuna antirrábica anual",
+                    descripcion: "Renovación de vacuna antirrábica",
+                    fecha: new Date(new Date().setDate(new Date().getDate() + 45)),
+                    prioridad: "alta"
+                },
+                {
+                    tipo: "Revisión",
+                    titulo: "Control veterinario trimestral",
+                    descripcion: "Revisión general de salud",
+                    fecha: new Date(new Date().setDate(new Date().getDate() + 90)),
+                    prioridad: "media"
+                },
+                {
+                    tipo: "PawMonitor",
+                    titulo: "Revisión de datos cardiovasculares",
+                    descripcion: "Análisis de tendencias en monitoreo cardíaco",
+                    fecha: new Date(new Date().setDate(new Date().getDate() + 15)),
+                    prioridad: "media"
+                }
+            ];
+            
+            for (const recordatorio of recordatoriosAutomaticos) {
+                await addDoc(collection(db, `usuarios/${userDocId}/recordatorios`), recordatorio);
+            }
+        }
+
+        // Obtener icono para recordatorio
+        function getIconoRecordatorio(tipo) {
+            switch (tipo) {
+                case "Vacuna":
+                    return '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 000 2h6a1 1 0 100-2H7z" clip-rule="evenodd" /></svg>';
+                case "Revisión":
+                    return '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" /></svg>';
+                default:
+                    return '<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>';
+            }
+        }
+        
+        // Cargar historial de interacciones
+        async function cargarHistorialInteracciones() {
+            try {
+                const historialContainer = document.getElementById("historialInteracciones");
+                historialContainer.innerHTML = "";
+                
+                // Obtener interacciones de la base de datos
+                const interaccionesRef = collection(db, `usuarios/${userDocId}/interacciones`);
+                const q = query(interaccionesRef, orderBy("fecha", "desc"), limit(10));
+                const querySnapshot = await getDocs(q);
+                
+                const interacciones = [];
+                querySnapshot.forEach(doc => {
+                    const data = doc.data();
+                    interacciones.push({
+                        ...data,
+                        fecha: data.fecha instanceof Timestamp ? data.fecha.toDate() : new Date(data.fecha)
+                    });
+                });
+                
+                // Si no hay interacciones, crear algunas de ejemplo
+                if (interacciones.length === 0) {
+                    await crearInteraccionesEjemplo();
+                    return cargarHistorialInteracciones();
+                }
+                
+                interacciones.forEach(interaccion => {
+                    const interaccionHTML = `
+                        <div class="flex items-start mb-4 pb-4 border-b border-gray-200 card-hover">
+                            <div class="flex-shrink-0 mr-3">
+                                ${getIconoInteraccion(interaccion.tipo)}
+                            </div>
+                            <div class="flex-1">
+                                <h5 class="font-medium text-gray-900">${interaccion.tipo}</h5>
+                                <p class="text-sm text-gray-600">${interaccion.descripcion}</p>
+                                <p class="text-xs text-gray-500 mt-1">${interaccion.fecha.toLocaleDateString('es-ES')}</p>
+                                ${interaccion.notas ? `<p class="text-xs text-blue-600 mt-1">${interaccion.notas}</p>` : ''}
+                            </div>
+                        </div>
+                    `;
+                    
+                    historialContainer.innerHTML += interaccionHTML;
+                });
+                
+            } catch (error) {
+                console.error("Error al cargar historial:", error);
+            }
+        }
+
+        // Crear interacciones de ejemplo
+        async function crearInteraccionesEjemplo() {
+            const interaccionesEjemplo = [
+                {
+                    tipo: "Visita",
+                    descripcion: "Revisión general y vacunación",
+                    fecha: new Date(new Date().setDate(new Date().getDate() - 30)),
+                    notas: "Mascota en excelente estado de salud"
+                },
+                {
+                    tipo: "PawMonitor",
+                    descripcion: "Alerta de ritmo cardíaco elevado",
+                    fecha: new Date(new Date().setDate(new Date().getDate() - 15)),
+                    notas: "Se normalizó después de ejercicio"
+                },
+                {
+                    tipo: "Consulta",
+                    descripcion: "Consulta telefónica sobre alimentación",
+                    fecha: new Date(new Date().setDate(new Date().getDate() - 7)),
+                    notas: "Recomendaciones dietéticas proporcionadas"
+                }
+            ];
+            
+            for (const interaccion of interaccionesEjemplo) {
+                await addDoc(collection(db, `usuarios/${userDocId}/interacciones`), interaccion);
+            }
+        }
+
+        // Obtener icono para interacción
+        function getIconoInteraccion(tipo) {
+            switch (tipo) {
+                case "Visita":
+                    return '<span class="inline-flex p-2 rounded-full bg-green-100 text-green-500"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg></span>';
+                case "PawMonitor":
+                    return '<span class="inline-flex p-2 rounded-full bg-red-100 text-red-500"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg></span>';
+                default:
+                    return '<span class="inline-flex p-2 rounded-full bg-blue-100 text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" /><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" /></svg></span>';
+            }
+        }
+
+        // Cargar gráfico de salud
+        async function cargarGraficoSalud() {
+            try {
+                const ctx = document.getElementById('graficoSalud').getContext('2d');
+                
+                if (!userData.mascota || !userData.mascota.id) {
+                    console.log("No se encontró información de la mascota");
+                    return;
+                }
+
+                // Consultar datos del historial
+                const registrosRef = collection(db, `usuarios/${userDocId}/historial/${userData.mascota.id}/registros`);
+                const registrosQuery = query(
+                    registrosRef,
+                    orderBy("timestamp", "desc"),
+                    limit(14) // Últimas 2 semanas
+                );
+                
+                const registrosSnapshot = await getDocs(registrosQuery);
+                
+                // Preparar arrays para datos y etiquetas
+                const labels = [];
+                const ritmoCardiaco = [];
+                const nivelOxigeno = [];
+                
+                // Ordenar los datos cronológicamente
+                const datosOrdenados = [];
+                registrosSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    datosOrdenados.push({
+                        ...data,
+                        id: doc.id
+                    });
+                });
+                
+                datosOrdenados.sort((a, b) => {
+                    const fechaA = a.timestamp instanceof Timestamp ? a.timestamp.toDate() : new Date(a.timestamp);
+                    const fechaB = b.timestamp instanceof Timestamp ? b.timestamp.toDate() : new Date(b.timestamp);
+                    return fechaA - fechaB;
+                });
+                
+                // Si no hay datos suficientes, usar datos simulados
+                if (datosOrdenados.length < 3) {
+                    const fechasSimuladas = Array.from({length: 7}, (_, i) => {
+                        const date = new Date();
+                        date.setDate(date.getDate() - (6 - i));
+                        return date;
+                    });
+                    
+                    for (let i = 0; i < 7; i++) {
+                        labels.push(fechasSimuladas[i].toLocaleDateString('es-ES', {day: 'numeric', month: 'short'}));
+                        ritmoCardiaco.push(75 + Math.floor(Math.random() * 15));
+                        nivelOxigeno.push(95 + Math.floor(Math.random() * 5));
+                    }
+                } else {
+                    datosOrdenados.forEach(dato => {
+                        const fecha = dato.timestamp instanceof Timestamp ? dato.timestamp.toDate() : new Date(dato.timestamp);
+                        labels.push(fecha.toLocaleDateString('es-ES', {day: 'numeric', month: 'short'}));
+                        ritmoCardiaco.push(dato.ritmo || 0);
+                        nivelOxigeno.push(dato.oxigeno || 0);
+                    });
+                }
+                
+                // Crear el gráfico
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Ritmo cardíaco (BPM)',
+                                data: ritmoCardiaco,
+                                backgroundColor: 'rgba(13, 148, 136, 0.2)',
+                                borderColor: 'rgba(13, 148, 136, 1)',
+                                borderWidth: 3,
+                                tension: 0.4,
+                                pointBackgroundColor: 'rgba(13, 148, 136, 1)',
+                                pointBorderColor: '#fff',
+                                pointBorderWidth: 2,
+                                pointRadius: 6,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Nivel de Oxígeno (%)',
+                                data: nivelOxigeno,
+                                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                                borderColor: 'rgba(59, 130, 246, 1)',
+                                borderWidth: 3,
+                                tension: 0.4,
+                                pointBackgroundColor: 'rgba(59, 130, 246, 1)',
+                                pointBorderColor: '#fff',
+                                pointBorderWidth: 2,
+                                pointRadius: 6,
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                                labels: {
+                                    usePointStyle: true,
+                                    padding: 20
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                display: true,
+                                title: {
+                                    display: true,
+                                    text: 'Fecha',
+                                    font: {
+                                        size: 14,
+                                        weight: 'bold'
+                                    }
+                                },
+                                grid: {
+                                    color: 'rgba(0, 0, 0, 0.1)'
+                                }
+                            },
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {
+                                    display: true,
+                                    text: 'BPM',
+                                    font: {
+                                        size: 14,
+                                        weight: 'bold'
+                                    }
+                                },
+                                min: Math.max(0, Math.min(...ritmoCardiaco) - 10),
+                                max: Math.max(...ritmoCardiaco) + 10,
+                                grid: {
+                                    color: 'rgba(13, 148, 136, 0.1)'
+                                }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {
+                                    display: true,
+                                    text: 'Oxígeno (%)',
+                                    font: {
+                                        size: 14,
+                                        weight: 'bold'
+                                    }
+                                },
+                                min: Math.max(0, Math.min(...nivelOxigeno) - 5),
+                                max: Math.min(100, Math.max(...nivelOxigeno) + 5),
+                                grid: {
+                                    drawOnChartArea: false,
+                                    color: 'rgba(59, 130, 246, 0.1)'
+                                }
+                            }
+                        }
+                    }
+                });
+                
+            } catch (error) {
+                console.error("Error al cargar datos de salud:", error);
+                cargarGraficoSaludSimulado();
+            }
+        }
+
+        // Cargar gráfico de salud simulado
+        function cargarGraficoSaludSimulado() {
+            const ctx = document.getElementById('graficoSalud').getContext('2d');
+            const labels = [];
+            const ritmoCardiaco = [];
+            
+            for (let i = 0; i < 7; i++) {
+                const date = new Date();
+                date.setDate(date.getDate() - (6 - i));
+                labels.push(date.toLocaleDateString('es-ES', {day: 'numeric', month: 'short'}));
+                ritmoCardiaco.push(75 + Math.floor(Math.random() * 15));
+            }
+            
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Ritmo cardíaco (BPM) - Datos simulados',
+                        data: ritmoCardiaco,
+                        backgroundColor: 'rgba(13, 148, 136, 0.2)',
+                        borderColor: 'rgba(13, 148, 136, 1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        pointBackgroundColor: 'rgba(13, 148, 136, 1)',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            min: Math.min(...ritmoCardiaco) - 5,
+                            max: Math.max(...ritmoCardiaco) + 5
+                        }
+                    }
+                }
+            });
+        }
+        
+async function cargarGraficoActividad() {
+  try {
+    const ctx = document.getElementById('graficoActividad').getContext('2d');
+
+    const registrosRef = collection(db, `usuarios/${userDocId}/historial/${userData.mascota.id}/registros`);
+    const q = query(registrosRef, orderBy("timestamp", "desc"), limit(500));
+    const snapshot = await getDocs(q);
+
+    const registrosPorDia = new Map();
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const fecha = data.timestamp instanceof Timestamp ? data.timestamp.toDate() : new Date(data.timestamp);
+      const fechaKey = fecha.toLocaleDateString('es-ES');
+
+      registrosPorDia.set(fechaKey, (registrosPorDia.get(fechaKey) || 0) + 1);
+    });
+
+    const dias = Array.from(registrosPorDia.entries())
+      .sort((a, b) => new Date(a[0]) - new Date(b[0]))
+      .slice(-7);
+
+    const labels = dias.map(d => d[0]);
+    const datos = dias.map(d => d[1]);
+
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Registros de actividad por día',
+          data: datos,
+          backgroundColor: 'rgba(79, 70, 229, 0.8)',
+          borderColor: 'rgba(79, 70, 229, 1)',
+          borderWidth: 2,
+          borderRadius: 8,
+          borderSkipped: false
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: {
+              usePointStyle: true,
+              padding: 20
+            }
+          },
+          tooltip: {
+            callbacks: {
+              afterLabel: function(context) {
+                return 'Cantidad de registros capturados por PawMonitor';
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Cantidad de registros',
+              font: {
+                size: 14,
+                weight: 'bold'
+              }
+            }
+          },
+          x: {
+            title: {
+              display: true,
+              text: 'Fecha',
+              font: {
+                size: 14,
+                weight: 'bold'
+              }
+            }
+          }
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Error al cargar gráfico de actividad:", error);
+  }
+}
+
+
+
+
+// Función de respaldo con datos simulados
+function cargarGraficoActividadSimulado() {
+    try {
+        const ctx = document.getElementById('graficoActividad').getContext('2d');
+        const diasSemana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+        const datosSimulados = [45, 30, 60, 25, 40, 70, 55];
+        
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: diasSemana,
+                datasets: [{
+                    label: 'Minutos de actividad (simulado)',
+                    data: datosSimulados,
+                    backgroundColor: 'rgba(79, 70, 229, 0.6)',
+                    borderColor: 'rgba(79, 70, 229, 1)',
+                    borderWidth: 2,
+                    borderRadius: 8,
+                    borderSkipped: false
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'top'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Minutos',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Día de la semana',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } catch (error) {
+        console.error("Error al cargar gráfico de actividad simulado:", error);
+    }
+}
+
+        // Verificar alertas
+        async function verificarAlertas() {
+            try {
+                // Obtener últimas lecturas para verificar alertas
+                const lecturasRef = collection(db, `usuarios/${userDocId}/historial/${userData.mascota.id}/registros`);
+                const q = query(lecturasRef, orderBy("timestamp", "desc"), limit(5));
+                const querySnapshot = await getDocs(q);
+                
+                alertasActivas = [];
+                
+                querySnapshot.forEach(doc => {
+                    const data = doc.data();
+                    const fecha = data.timestamp instanceof Timestamp ? data.timestamp.toDate() : new Date(data.timestamp);
+                    
+                    // Verificar ritmo cardíaco
+                    if (data.ritmo > 100) {
+                        alertasActivas.push({
+                            tipo: "warning",
+                            mensaje: `Ritmo cardíaco elevado: ${data.ritmo} BPM`,
+                            fecha: fecha,
+                            prioridad: "alta"
+                        });
+                    } else if (data.ritmo < 60) {
+                        alertasActivas.push({
+                            tipo: "warning",
+                            mensaje: `Ritmo cardíaco bajo: ${data.ritmo} BPM`,
+                            fecha: fecha,
+                            prioridad: "media"
+                        });
+                    }
+                    
+                    // Verificar oxígeno
+                    if (data.oxigeno < 95) {
+                        alertasActivas.push({
+                            tipo: "critical",
+                            mensaje: `Nivel de oxígeno bajo: ${data.oxigeno}%`,
+                            fecha: fecha,
+                            prioridad: "crítica"
+                        });
+                    }
+                });
+                
+                
+            } catch (error) {
+                console.error("Error al verificar alertas:", error);
+            }
+        }
+
+
+        // Iniciar actualizaciones en tiempo real
+        function iniciarActualizacionTiempoReal() {
+            // Actualizar cada 30 segundos
+            setInterval(async () => {
+                await verificarAlertas();
+                await cargarEstadisticas();
+            }, 30000);
+        }
+
+        // Mostrar notificación
+        function mostrarNotificacion(mensaje, tipo = "info") {
+            const notificacion = document.createElement("div");
+            notificacion.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transition-all duration-300 ${
+                tipo === "error" ? "bg-red-500 text-white" :
+                tipo === "success" ? "bg-green-500 text-white" :
+                "bg-blue-500 text-white"
+            }`;
+            notificacion.textContent = mensaje;
+            
+            document.body.appendChild(notificacion);
+            
+            setTimeout(() => {
+                notificacion.remove();
+            }, 5000);
+        }
+
+        // Exportar funciones al objeto window
+        window.programarRecordatorio = async function() {
+            const tipo = document.getElementById('tipoRecordatorio').value;
+            const fecha = document.getElementById('fechaRecordatorio').value;
+            const descripcion = document.getElementById('descripcionRecordatorio').value;
+            
+            if (!tipo || !fecha || !descripcion) {
+                mostrarNotificacion('Por favor completa todos los campos', 'error');
+                return;
+            }
+            
+            try {
+                await addDoc(collection(db, `usuarios/${userDocId}/recordatorios`), {
+                    tipo: tipo,
+                    titulo: `${tipo} - ${descripcion}`,
+                    descripcion: descripcion,
+                    fecha: new Date(fecha),
+                    prioridad: "media",
+                    completado: false
+                });
+                
+                mostrarNotificacion('Recordatorio programado con éxito', 'success');
+                document.getElementById('modalRecordatorio').classList.add('hidden');
+                
+                // Limpiar formulario
+                document.getElementById('tipoRecordatorio').value = '';
+                document.getElementById('fechaRecordatorio').value = '';
+                document.getElementById('descripcionRecordatorio').value = '';
+                
+                // Recargar recordatorios
+                await generarRecordatorios();
+            } catch (error) {
+                console.error('Error al programar recordatorio:', error);
+                mostrarNotificacion('Error al programar el recordatorio', 'error');
+            }
+        };
+
+        window.completarRecordatorio = async function(recordatorioId) {
+            try {
+                const recordatorioRef = doc(db, `usuarios/${userDocId}/recordatorios`, recordatorioId);
+                await updateDoc(recordatorioRef, {
+                    completado: true,
+                    fechaCompletado: new Date()
+                });
+                
+                mostrarNotificacion('Recordatorio completado', 'success');
+                await generarRecordatorios();
+            } catch (error) {
+                console.error('Error al completar recordatorio:', error);
+                mostrarNotificacion('Error al completar recordatorio', 'error');
+            }
+        };
+        
+        window.abrirModal = function(modalId) {
+            document.getElementById(modalId).classList.remove('hidden');
+        };
+        
+        window.cerrarModal = function(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        };
+        
+        window.enviarComunicacion = async function() {
+            const canal = document.getElementById('canalComunicacion').value;
+            const mensaje = document.getElementById('mensajeComunicacion').value;
+            
+            if (!canal || !mensaje) {
+                mostrarNotificacion('Por favor completa todos los campos', 'error');
+                return;
+            }
+            
+            try {
+                // Guardar la comunicación en el historial
+                await addDoc(collection(db, `usuarios/${userDocId}/interacciones`), {
+                    tipo: "Comunicación",
+                    descripcion: `Mensaje enviado por ${canal}`,
+                    fecha: new Date(),
+                    notas: mensaje,
+                    canal: canal
+                });
+                
+                mostrarNotificacion(`Mensaje enviado por ${canal}`, 'success');
+                document.getElementById('modalComunicacion').classList.add('hidden');
+                
+                // Limpiar formulario
+                document.getElementById('canalComunicacion').value = '';
+                document.getElementById('mensajeComunicacion').value = '';
+                
+                // Recargar historial
+                await cargarHistorialInteracciones();
+            } catch (error) {
+                console.error('Error al enviar comunicación:', error);
+                mostrarNotificacion('Error al enviar comunicación', 'error');
+            }
+        };
+
+        window.verAlertas = function() {
+            if (alertasActivas.length === 0) {
+                mostrarNotificacion('No hay alertas activas', 'info');
+                return;
+            }
+            
+            let alertasHTML = '<div class="space-y-2">';
+            alertasActivas.forEach(alerta => {
+                alertasHTML += `
+                    <div class="p-3 rounded-lg ${alerta.prioridad === 'crítica' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}">
+                        <p class="font-medium">${alerta.mensaje}</p>
+                        <p class="text-xs">${alerta.fecha.toLocaleString('es-ES')}</p>
+                    </div>
+                `;
+            });
+            alertasHTML += '</div>';
+            
+            // Mostrar modal con alertas (implementar modal de alertas)
+            mostrarNotificacion(`${alertasActivas.length} alertas activas`, 'warning');
+        };
+
+        window.cerrarSesion = async function() {
+            try {
+                await signOut(auth);
+                window.location.replace("/inicio");
+            } catch (error) {
+                console.error("Error al cerrar sesión:", error);
+                mostrarNotificacion("Error al cerrar sesión", "error");
+            }
+        };
+
+        // Función para toggle de menús
+        window.toggleMenu = function(menuId) {
+            const menu = document.getElementById(menuId + 'Menu');
+            const icon = document.getElementById('icon' + menuId.charAt(0).toUpperCase() + menuId.slice(1));
+            
+            menu.classList.toggle('hidden');
+            if (menu.classList.contains('hidden')) {
+                icon.classList.remove('transform', 'rotate-90');
+            } else {
+                icon.classList.add('transform', 'rotate-90');
+            }
+        };
+
+            async function actualizarPawMonitorStatus() {
+  try {
+    const registrosRef = collection(db, `usuarios/${userDocId}/historial/${userData.mascota.id}/registros`);
+    const q = query(registrosRef, orderBy("timestamp", "desc"), limit(1));
+    const querySnapshot = await getDocs(q);
+
+    const statusElement = document.getElementById("pawMonitorStatus");
+    const ultimaLecturaElement = document.getElementById("pawMonitorUltimaLectura");
+
+    if (!querySnapshot.empty) {
+      const doc = querySnapshot.docs[0];
+      const data = doc.data();
+      const fecha = data.timestamp instanceof Timestamp ? data.timestamp.toDate() : new Date(data.timestamp);
+      const ahora = new Date();
+      const diffMs = ahora - fecha;
+      const diffMin = Math.floor(diffMs / 60000);
+
+      let texto;
+      if (diffMin < 1) {
+        texto = "hace unos segundos";
+      } else if (diffMin < 60) {
+        texto = `hace ${diffMin} minuto${diffMin === 1 ? "" : "s"}`;
+      } else if (diffMin < 1440) {
+        const horas = Math.floor(diffMin / 60);
+        texto = `hace ${horas} hora${horas === 1 ? "" : "s"}`;
+      } else if (diffMin < 10080) {
+        const dias = Math.floor(diffMin / 1440);
+        texto = `hace ${dias} día${dias === 1 ? "" : "s"}`;
+      } else {
+        const semanas = Math.floor(diffMin / 10080);
+        texto = `hace ${semanas} semana${semanas === 1 ? "" : "s"}`;
+      }
+
+      const activo = diffMin <= 10; // Considera activo si la última lectura fue hace 10 minutos o menos
+
+      if (statusElement) {
+        statusElement.textContent = activo ? "Monitoreando activamente" : "Inactivo";
+        statusElement.classList.toggle("text-green-600", activo);
+        statusElement.classList.toggle("text-red-600", !activo);
+      }
+
+      if (ultimaLecturaElement) {
+        ultimaLecturaElement.textContent = `Última lectura: ${texto}`;
+      }
+    } else {
+      if (statusElement) {
+        statusElement.textContent = "Inactivo";
+        statusElement.classList.remove("text-green-600");
+        statusElement.classList.add("text-red-600");
+      }
+
+      if (ultimaLecturaElement) {
+        ultimaLecturaElement.textContent = "Última lectura: No disponible";
+      }
+    }
+  } catch (error) {
+    console.error("Error al actualizar el estado de PawMonitor:", error);
+  }
+}
+
+
+    </script>
+</head>
+<body class="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100">
+    <!-- Navbar -->
+    <nav class="gradient-bg text-white px-6 py-4 shadow-xl">
+        <div class="flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <div class="bg-white/20 p-2 rounded-xl backdrop-blur-sm">
+                    <img src="/img/vetcare-logo1.png" alt="VetCare Plus Logo" class="h-10 w-10">
+                </div>
+                <div>
+                    <span class="text-2xl font-bold">VetCare Plus</span>
+                    <p class="text-teal-100 text-sm">Sistema de Gestión Veterinaria</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-6">
+
+                
+                <!-- Perfil de usuario -->
+                <div class="flex items-center space-x-3 bg-white/20 rounded-xl px-4 py-2 backdrop-blur-sm">
+                    <div class="text-right">
+                        <p class="font-semibold">👋 Hola, <span id="nombre"></span></p>
+                        <p class="text-xs text-teal-100" id="emailUsuario"></p>
+                    </div>
+                    <img id="fotoPerfil" src="https://cdn-icons-png.flaticon.com/512/847/847969.png" alt="Avatar" class="h-10 w-10 rounded-full object-cover border-2 border-white/50">
+                </div>
+
+                <!-- Botón cerrar sesión -->
+                <button 
+                    onclick="cerrarSesion()"
+                    class="bg-red-500/90 px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 hover:bg-red-600 transition-all transform hover:scale-105 shadow-lg backdrop-blur-sm"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                    Cerrar sesión
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="flex flex-1">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-white shadow-2xl">
+            <div class="p-6">
+                <div class="mb-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Navegación</h3>
+                    <div class="h-1 bg-gradient-to-r from-teal-500 to-blue-500 rounded-full"></div>
+                </div>
+                
+                <ul class="space-y-2">
+                    <li>
+                        <a href="/principal" class="flex items-center text-teal-600 font-medium hover:text-teal-500 transition-all p-3 rounded-lg hover:bg-teal-50">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 mr-3">
+                                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                            </svg>
+                            Inicio
+                        </a>
+                    </li>
+
+                    <li>
+                        <a href="/nuevodash" class="flex items-center text-white font-medium bg-gradient-to-r from-teal-500 to-teal-600 p-3 rounded-lg shadow-md">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 mr-3">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="9" cy="7" r="4"></circle>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            </svg>
+                            CRM
+                        </a>
+                    </li>
+
+                    <li>
+                        <button
+                            onclick="toggleMenu('perfil')"
+                            class="flex w-full items-center text-gray-700 hover:text-teal-500 transition-all p-3 rounded-lg hover:bg-gray-50"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 mr-3">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <circle cx="12" cy="10" r="3"></circle>
+                                <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"></path>
+                            </svg>
+                            <span>Perfil</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-auto h-4 w-4 transition-transform" id="iconPerfil">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
+                        </button>
+                        <ul id="perfilMenu" class="hidden mt-2 pl-8 space-y-2 text-gray-600 transition-all">
+                            <li>
+                                <a href="/perfil" class="flex items-center py-2 hover:text-teal-500 transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 mr-2">
+                                        <path d="M12 20h9"></path>
+                                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                                    </svg>
+                                    Editar información
+                                </a>
+                            </li>
+                            <li>
+                                <a href="/cambiocontraseña" class="flex items-center py-2 hover:text-teal-500 transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 mr-2">
+                                        <path d="M12 20h9"></path>
+                                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+                                    </svg>
+                                    Cambiar contraseña
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+
+                    <li>
+                        <button
+                            onclick="toggleMenu('seguimiento')"
+                            class="flex w-full items-center text-gray-700 hover:text-teal-500 transition-all p-3 rounded-lg hover:bg-gray-50"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 mr-3">
+                                <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                            </svg>
+                            <span>Seguimiento</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-auto h-4 w-4 transition-transform" id="iconSeguimiento">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
+                        </button>
+                        <ul id="seguimientoMenu" class="hidden mt-2 pl-8 space-y-2 text-gray-600 transition-all">
+                            <li>
+                                <a href="/pawmonitor" class="flex items-center text-gray-700 hover:text-teal-500 transition-colors py-2">
+                                    <img src="/img/pawmonitor.png" alt="PawMonitor" class="h-4 w-6 mr-2">
+                                    <span>PawMonitor</span>
+                                </a>
+                            </li>
+                            <li>
+                                <a href="/historial" class="flex items-center py-2 hover:text-teal-500 transition-colors">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 mr-2">
+                                        <path d="M3 3v18h18"></path>
+                                        <path d="m19 9-5 5-4-4-3 3"></path>
+                                    </svg>
+                                    Historial
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+
+                    <li>
+                        <a href="/vacunas" class="flex items-center text-gray-700 hover:text-teal-500 transition-all p-3 rounded-lg hover:bg-gray-50">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 mr-3">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                            </svg>
+                            Vacunas
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Contenido principal -->
+        <main class="flex-1 p-6 overflow-y-auto">
+            <!-- Header del contenido -->
+            <div class="mb-8">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-3xl font-bold text-gray-800 mb-2">CRM - Gestión de Cliente</h1>
+                        <p class="text-gray-600">Seguimiento integral de tu paciente y propietario</p>
+                    </div>
+                    <div class="flex space-x-3">
+                        <button onclick="abrirModal('modalRecordatorio')" class="bg-teal-500 text-white px-4 py-2 rounded-lg hover:bg-teal-600 transition-all transform hover:scale-105 shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                            Nuevo Recordatorio
+                        </button>
+                        <button onclick="abrirModal('modalComunicacion')" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-all transform hover:scale-105 shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
+                            Nueva Comunicación
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjetas de información principal -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <!-- Información de la mascota -->
+                <div class="bg-white rounded-2xl shadow-lg p-6 card-hover border border-gray-100">
+                    <div class="flex items-center">
+                        <div class="bg-gradient-to-br from-teal-400 to-teal-600 p-4 rounded-xl shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white">
+                                <path d="M20 16.2A5 5 0 0 0 16.8 20H7.2A5 5 0 0 0 4 16.2V7.2A5 5 0 0 0 7.2 4h9.6A5 5 0 0 0 20 7.2v9Z"/>
+                                <circle cx="12" cy="11" r="3"/>
+                                <path d="m8 22 4-11 4 11"/>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-bold text-gray-800" id="mascotaNombre">Mascota</h3>
+                            <p class="text-sm text-gray-500" id="mascotaTipo">Tipo</p>
+                            <p class="text-xs text-gray-400" id="mascotaRaza">Raza</p>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-gray-100">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-500">Edad:</span>
+                            <span class="text-sm font-medium" id="mascotaEdad">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Estado de salud -->
+                <div class="bg-white rounded-2xl shadow-lg p-6 card-hover border border-gray-100">
+                    <div class="flex items-center">
+                        <div class="bg-gradient-to-br from-green-400 to-green-600 p-4 rounded-xl shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white pulse-animation">
+                                <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-bold text-gray-800">Estado de Salud</h3>
+                            <span id="estadoMascota" class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                                <span id="estadoTexto">Monitoreando</span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Próxima vacuna -->
+                <div class="bg-white rounded-2xl shadow-lg p-6 card-hover border border-gray-100">
+                    <div class="flex items-center">
+                        <div class="bg-gradient-to-br from-purple-400 to-purple-600 p-4 rounded-xl shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                <line x1="16" y1="2" x2="16" y2="6"></line>
+                                <line x1="8" y1="2" x2="8" y2="6"></line>
+                                <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-bold text-gray-800">Próxima Vacuna</h3>
+                            <p class="text-sm text-gray-600" id="proximaVacuna">Calculando...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PawMonitor Status -->
+                <div class="bg-white rounded-2xl shadow-lg p-6 card-hover border border-gray-100">
+                    <div class="flex items-center">
+                        <div class="bg-gradient-to-br from-blue-400 to-blue-600 p-4 rounded-xl shadow-lg">
+                            <img src="/img/pawmonitor2.png" alt="PawMonitor" class="h-6 w-6 filter brightness-0 invert">
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-bold text-gray-800">PawMonitor</h3>
+                            <p class="text-sm font-medium" id="pawMonitorStatus">Cargando estado...</p>
+                            <p class="text-xs text-gray-500" id="pawMonitorUltimaLectura">Cargando lectura...</p>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Estadísticas de monitoreo -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="bg-gradient-to-br from-red-50 to-red-100 rounded-2xl shadow-lg p-6 card-hover border border-red-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-red-700">Lecturas Totales</p>
+                            <p class="text-2xl font-bold text-red-900" id="totalLecturas">0</p>
+                            <p class="text-xs text-red-600 mt-1">Últimos 30 días</p>
+                        </div>
+                        <div class="bg-red-200 p-3 rounded-xl">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl shadow-lg p-6 card-hover border border-blue-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-blue-700">Ritmo Promedio</p>
+                            <p class="text-2xl font-bold text-blue-900" id="promedioRitmo">0 BPM</p>
+                            <p class="text-xs text-blue-600 mt-1">Últimos 30 días</p>
+                        </div>
+                        <div class="bg-blue-200 p-3 rounded-xl">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-600 pulse-animation" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl shadow-lg p-6 card-hover border border-green-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-green-700">Oxígeno Promedio</p>
+                            <p class="text-2xl font-bold text-green-900" id="promedioOxigeno">0%</p>
+                            <p class="text-xs text-green-600 mt-1">Últimos 30 días</p>
+                        </div>
+                        <div class="bg-green-200 p-3 rounded-xl">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-2xl shadow-lg p-6 card-hover border border-yellow-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-yellow-700">Alertas Generadas</p>
+                            <p class="text-2xl font-bold text-yellow-900" id="alertasGeneradas">0</p>
+                            <p class="text-xs text-yellow-600 mt-1">Últimos 30 días</p>
+                        </div>
+                        <div class="bg-yellow-200 p-3 rounded-xl">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contenido principal del CRM -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Columna izquierda - Recordatorios e Historial -->
+                <div class="lg:col-span-1 space-y-8">
+                    <!-- Recordatorios -->
+                    <div class="bg-white rounded-2xl shadow-lg border border-gray-100">
+                        <div class="p-6 border-b border-gray-100">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h2 class="text-xl font-bold text-gray-800">Recordatorios</h2>
+                                    <p class="text-sm text-gray-500">Próximas citas y tareas</p>
+                                </div>
+                                <button 
+                                    onclick="abrirModal('modalRecordatorio')" 
+                                    class="text-teal-500 hover:text-teal-600 p-2 rounded-lg hover:bg-teal-50 transition-all"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="16"></line>
+                                        <line x1="8" y1="12" x2="16" y2="12"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="p-6 max-h-96 overflow-y-auto">
+                            <div id="recordatorios" class="space-y-3">
+                                <!-- Los recordatorios se cargan dinámicamente -->
+                                <div class="text-center text-gray-500 py-8">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <p>Cargando recordatorios...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Historial de interacciones -->
+                    <div class="bg-white rounded-2xl shadow-lg border border-gray-100">
+                        <div class="p-6 border-b border-gray-100">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h2 class="text-xl font-bold text-gray-800">Historial de Interacciones</h2>
+                                    <p class="text-sm text-gray-500">Comunicaciones recientes</p>
+                                </div>
+                                <button 
+                                    onclick="abrirModal('modalComunicacion')" 
+                                    class="text-teal-500 hover:text-teal-600 p-2 rounded-lg hover:bg-teal-50 transition-all"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="p-6 max-h-96 overflow-y-auto">
+                            <div id="historialInteracciones">
+                                <!-- El historial se carga dinámicamente -->
+                                <div class="text-center text-gray-500 py-8">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                    </svg>
+                                    <p>Cargando historial...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Columna derecha - Gráficos -->
+                <div class="lg:col-span-2 space-y-8">
+                    <!-- Gráfico de salud -->
+                    <div class="bg-white rounded-2xl shadow-lg border border-gray-100">
+                        <div class="p-6 border-b border-gray-100">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h2 class="text-xl font-bold text-gray-800">Monitoreo de Salud</h2>
+                                    <p class="text-sm text-gray-500">Tendencias de signos vitales</p>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <div class="flex items-center space-x-1">
+                                        <div class="w-3 h-3 bg-teal-500 rounded-full"></div>
+                                        <span class="text-xs text-gray-600">Ritmo cardíaco</span>
+                                    </div>
+                                    <div class="flex items-center space-x-1">
+                                        <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
+                                        <span class="text-xs text-gray-600">Oxígeno</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-6">
+                            <div class="h-80">
+                                <canvas id="graficoSalud"></canvas>
+                            </div>
+                            <div class="mt-4 text-sm text-gray-500 text-center bg-gray-50 rounded-lg p-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Datos proporcionados por PawMonitor en tiempo real
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Gráfico de actividad -->
+                    <div class="bg-white rounded-2xl shadow-lg border border-gray-100">
+                        <div class="p-6 border-b border-gray-100">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h2 class="text-xl font-bold text-gray-800">Registro de Actividad</h2>
+                                    <p class="text-sm text-gray-500">Actividad física semanal</p>
+                                </div>
+                                <div class="text-sm text-gray-500">
+                                    <span class="bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full">Última semana</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-6">
+                            <div class="h-80">
+                                <canvas id="graficoActividad"></canvas>
+                            </div>
+                            <div class="mt-4 text-sm text-gray-500 text-center bg-gray-50 rounded-lg p-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                                Registro de actividad física diaria
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal para programar recordatorio -->
+    <div id="modalRecordatorio" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 transform transition-all">
+            <div class="p-6 border-b border-gray-200">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-xl font-bold text-gray-800">Programar Recordatorio</h3>
+                    <button onclick="cerrarModal('modalRecordatorio')" class="text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-100 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Tipo de recordatorio</label>
+                    <select id="tipoRecordatorio" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                        <option value="Vacuna">Vacuna</option>
+                        <option value="Revisión">Revisión</option>
+                        <option value="PawMonitor">Revisión PawMonitor</option>
+                        <option value="Medicación">Medicación</option>
+                        <option value="Desparasitación">Desparasitación</option>
+                        <option value="Limpieza dental">Limpieza dental</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Fecha</label>
+                    <input type="date" id="fechaRecordatorio" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Descripción</label>
+                    <textarea id="descripcionRecordatorio" rows="3" placeholder="Describe el recordatorio..." class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"></textarea>
+                </div>
+                
+                <div class="flex justify-end space-x-3 pt-4">
+                    <button 
+                        onclick="cerrarModal('modalRecordatorio')"
+                        class="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        onclick="programarRecordatorio()"
+                        class="px-6 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition-colors shadow-lg"
+                    >
+                        Guardar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para comunicación -->
+    <div id="modalComunicacion" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 transform transition-all">
+            <div class="p-6 border-b border-gray-200">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-xl font-bold text-gray-800">Nueva Comunicación</h3>
+                    <button onclick="cerrarModal('modalComunicacion')" class="text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-100 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Canal de comunicación</label>
+                    <select id="canalComunicacion" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="email">Email</option>
+                        <option value="sms">SMS</option>
+                        <option value="whatsapp">WhatsApp</option>
+                        <option value="llamada">Llamada telefónica</option>
+                        <option value="notificacion">Notificación app</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Mensaje</label>
+                    <textarea id="mensajeComunicacion" rows="4" placeholder="Escribe tu mensaje aquí..." class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"></textarea>
+                </div>
+                
+                <div class="flex justify-end space-x-3 pt-4">
+                    <button 
+                        onclick="cerrarModal('modalComunicacion')"
+                        class="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        onclick="enviarComunicacion()"
+                        class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors shadow-lg"
+                    >
+                        Enviar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

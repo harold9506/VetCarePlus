@@ -1,0 +1,32 @@
+package com.sistemainformacion.VetCarePlus.config;
+
+import com.google.auth.oauth2.GoogleCredentials;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.FirebaseOptions;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
+
+import java.io.IOException;
+import java.io.InputStream;
+
+@Configuration
+public class FirebaseConfig {
+
+    @Bean
+    public FirebaseApp firebaseApp() throws IOException {
+        if (FirebaseApp.getApps().isEmpty()) {
+            // Cargar el archivo de credenciales desde resources
+            InputStream serviceAccount = new ClassPathResource("firebase/serviceAccountKey.json").getInputStream();
+
+            FirebaseOptions options = FirebaseOptions.builder()
+                .setCredentials(GoogleCredentials.fromStream(serviceAccount))
+                .setDatabaseUrl("https://pawmonitor-10eba-default-rtdb.firebaseio.com/")
+                .build();
+
+            return FirebaseApp.initializeApp(options);
+        } else {
+            return FirebaseApp.getInstance();
+        }
+    }
+}
