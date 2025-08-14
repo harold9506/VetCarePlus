@@ -16,7 +16,6 @@ public class FirebaseConfig {
     @Bean
     public FirebaseApp firebaseApp() throws IOException {
         if (FirebaseApp.getApps().isEmpty()) {
-            // Cargar el archivo de credenciales desde resources
             InputStream serviceAccount = new ClassPathResource("firebase/serviceAccountKey.json").getInputStream();
 
             FirebaseOptions options = FirebaseOptions.builder()
